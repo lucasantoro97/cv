@@ -12,7 +12,7 @@ address:
   postcode: ''
   country: Italy
 
-summary: This week, I had the privilege of participating and presenting my work on non destructive testing in the 3rd International Symposium on Industrial Engineering and Automation at the university of Bolzano in südtirol. It was an excellent opportunity to connect with esteemed colleagues from Germany and north Europe, and exchange insights on the latest advancements in our field.
+summary: 3rd International Symposium on Industrial Engineering and Automation at the university of Bolzano in südtirol.
 abstract: 'The thermal responses of two additive manufactured specimens (as built and heat treated) was analyzed for a steel magnetic plate as a case study. The analysis was based on the evidence that variations in the thermal properties of a material can be measured as a phase delay in material thermal diffusion. The specimens underwent active lock in laser thermography testing. The thermal signal post-processing was performed by a in-house Python code which automates the search for the laser beam centroid on the acqured thermal map. The directional diffusivity is then obtained. The results showed that after heat treatment, the slope of the phase diagram changed, indicating a change in thermal diffusivity and hence, thermal conductivity. The results highlight that the thermographic non destructive full field non contact approach can be used to evaluate the microstructure and thermal performance of magnetic steel additive manufactured components.'
 
 # Talk start and end times.
