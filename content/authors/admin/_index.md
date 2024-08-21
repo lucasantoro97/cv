@@ -103,64 +103,64 @@ work:
       # - Evaluating and certifying the competence of NDT personnel through practical and theoretical assessments.
       # - Preparing and reviewing examination documentation, ensuring accuracy and compliance with industry requirements.
 
-- position: Technical Manager
-  company_name: Studio di Ingegneria Luca Santoro - Autonomo
-  company_url: ''
-  company_logo: ''
-  date_start: 2020-12-01
-  date_end: 2024-06-30
-  summary: |2-
-    Responsibilities include:
-    - Managing fracture mechanics projects and finite element analysis.
-    - Conducting technical analysis using python.
-    - Overseeing project management and client relations.
+  - position: Technical Manager
+    company_name: Studio di Ingegneria Luca Santoro - Autonomo
+    company_url: ''
+    company_logo: ''
+    date_start: 2020-12-01
+    date_end: 2024-06-30
+    summary: |2-
+      Responsibilities include:
+      - Managing fracture mechanics projects and finite element analysis.
+      - Conducting technical analysis using python.
+      - Overseeing project management and client relations.
 
-- position: Guest Scientist
-  company_name: Technical University of Munich
-  company_url: ''
-  company_logo: ''
-  date_start: 2023-04-01
-  date_end: 2023-07-31
-  summary: |2-
-    Research Topic:
-    - Additive manufacturing on stainless steel for civil applications.
-    - Fatigue behaviour of AM materials.
-    - Iterative methodology using thermography for fast evaluation of fatigue limit.
+  - position: Guest Scientist
+    company_name: Technical University of Munich
+    company_url: ''
+    company_logo: ''
+    date_start: 2023-04-01
+    date_end: 2023-07-31
+    summary: |2-
+      Research Topic:
+      - Additive manufacturing on stainless steel for civil applications.
+      - Fatigue behaviour of AM materials.
+      - Iterative methodology using thermography for fast evaluation of fatigue limit.
 
-- position: Intern
-  company_name: ADES GROUP
-  company_url: ''
-  company_logo: ''
-  date_start: 2021-03-01
-  date_end: 2021-06-30
-  summary: |2-
-    Responsibilities include:
-    - Developed technical procedures for residual stress detection in steel welds using active thermography.
-    - Collaborated in metallurgy, welding, and fracture mechanics projects.
-    - Conducted metallographic analysis and phase contrast studies.
+  - position: Intern
+    company_name: ADES GROUP
+    company_url: ''
+    company_logo: ''
+    date_start: 2021-03-01
+    date_end: 2021-06-30
+    summary: |2-
+      Responsibilities include:
+      - Developed technical procedures for residual stress detection in steel welds using active thermography.
+      - Collaborated in metallurgy, welding, and fracture mechanics projects.
+      - Conducted metallographic analysis and phase contrast studies.
 
-- position: Research Fellow
-  company_name: Politecnico di Torino
-  company_url: ''
-  company_logo: ''
-  date_start: 2019-10-01
-  date_end: 2020-10-31
-  summary: |2-
-    Research Topic:
-    - Design and experimentation of mechanical drive components.
-    - Study of thermography and damping materials.
-    - Conducted research in the "DESIGN AND EXPERIMENTATION OF MECHANICAL DRIVE COMPONENTS, THERMOGRAPHY AND DAMPING MATERIALS" group.
+  - position: Research Fellow
+    company_name: Politecnico di Torino
+    company_url: ''
+    company_logo: ''
+    date_start: 2019-10-01
+    date_end: 2020-10-31
+    summary: |2-
+      Research Topic:
+      - Design and experimentation of mechanical drive components.
+      - Study of thermography and damping materials.
+      - Conducted research in the "DESIGN AND EXPERIMENTATION OF MECHANICAL DRIVE COMPONENTS, THERMOGRAPHY AND DAMPING MATERIALS" group.
 
-- position: Intern
-  company_name: ADES GROUP
-  company_url: ''
-  company_logo: ''
-  date_start: 2019-08-01
-  date_end: 2019-10-31
-  summary: |2-
-    Responsibilities include:
-    - Involved in corrosion engineering and risk-based inspection (RBI) according to API 580, API 581 standards.
-    - Conducted technical analysis and supported engineering projects in the Priolo Gargallo facility.
+  - position: Intern
+    company_name: ADES GROUP
+    company_url: ''
+    company_logo: ''
+    date_start: 2019-08-01
+    date_end: 2019-10-31
+    summary: |2-
+      Responsibilities include:
+      - Involved in corrosion engineering and risk-based inspection (RBI) according to API 580, API 581 standards.
+      - Conducted technical analysis and supported engineering projects in the Priolo Gargallo facility.
 
   
 # Skills
