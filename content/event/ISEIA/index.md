@@ -33,7 +33,7 @@ tags: ["Thermography","Conference"]
 featured: false
 
 image:
-  caption: ''
+  caption: 'ISEIA 2024'
   focal_point: Right
 
 #links:
