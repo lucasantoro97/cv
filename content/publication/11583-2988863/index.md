@@ -29,8 +29,8 @@ abstract: This study presents a comprehensive understanding of the fatigue behav
   and non-destructive means of assessing the fatigue performance of materials produced
   using additive manufacturing processes.
   
-tags:
-- Additive manufacturing · FatigueThermography · Micro-shakedown · Intrinsic dissipation
+tags: ["Additive manufacturing", "Fatigue","Thermography","Micro-shakedown","Intrinsic dissipation"]
+# - Additive manufacturing · Fatigue Thermography · Micro-shakedown · Intrinsic dissipation
 
 links:
 - name: URL

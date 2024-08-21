@@ -27,8 +27,8 @@ links:
 - name: URL
   url: https://www.sciencedirect.com/science/article/pii/S1350630723008981?via=ihub
 
-tags:
-- Weldings · Fatigue · Finite Elemen Analysis · Defects
+tags: ["Weldings", "Fatigue","Finite Elemen Analysis","Defects"]
+# - Weldings · Fatigue · Finite Elemen Analysis · Defects
 
 # Featured image
 # To use, add an image named `featured.jpg/png` to your page's folder. 
