@@ -28,11 +28,10 @@ abstract: This study presents a comprehensive understanding of the fatigue behav
   the fatigue limit using thermography, offering a cost-effective, time-efficient,
   and non-destructive means of assessing the fatigue performance of materials produced
   using additive manufacturing processes.
+  
 tags:
-- Additive manufacturing
-- FatigueThermography
-- Micro-shakedown
-- Intrinsic dissipation
+- Additive manufacturing · FatigueThermography · Micro-shakedown · Intrinsic dissipation
+
 links:
 - name: URL
   url: https://www.sciencedirect.com/science/article/pii/S1350630724004928?via=ihub
