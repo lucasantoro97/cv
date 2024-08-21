@@ -187,15 +187,15 @@ skills:
       - name: Mechanical Testing
         description: ''
         percent: 100
-        icon: person-simple-walk
+        icon: custom/gear-solid
       - name: Metallurgy
         description: ''
         percent: 80
-        icon: gear
+        icon: custom/flask-vial-solid
       - name: Robotics
         description: ''
         percent: 60
-        icon: camera
+        icon: custom/robot-solid
 
 languages:
   - name: English
