@@ -1,0 +1,31 @@
+---
+title: Nugget and corona bond size measurement through active thermography and transfer
+  learning model
+authors:
+- Luca Santoro
+- Valentino Razza
+- De Maddis
+- ' Manuela'
+date: '2024-01-01'
+publishDate: '2024-08-21T11:20:41.012818Z'
+publication_types:
+- article-journal
+publication: '*THE INTERNATIONAL JOURNAL OF ADVANCED MANUFACTURING TECHNOLOGY*'
+doi: 10.1007/s00170-024-14096-4
+abstract: Resistance spot welding (RSW) is considered a preferred technique for joining
+  metal parts in various industries, mainly for its efficiency and cost-effectiveness.
+  The mechanical properties of spot welds are pivotal in ensuring structural integrity
+  and overall assembly performance. In this work, the quality attributes of resistance
+  spot welding, such as both nugget and corona bond sizes, are assessed by analyzing
+  the thermal behavior of the joint using a physical information neural network (PINN).
+  Starting from the thermal signal phase gradient and amplitude gradient maps, a convolutional
+  neural network (CNN) estimates the size of nuggets and corona bonds. The CNN architecture
+  is based on the Inception V3 architecture, a state-of-the-art neural network that
+  excels in image recognition tasks. This study suggests adopting a new methodology
+  for automatic RSW quality control based on thermal signal analysis.
+tags:
+- Resistance spot weld · Quality · Convolutional neural network · Thermography · Welding
+links:
+- name: URL
+  url: https://link.springer.com/article/10.1007/s00170-024-14096-4
+---
