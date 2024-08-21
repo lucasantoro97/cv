@@ -191,7 +191,7 @@ skills:
       - name: Metallurgy
         description: ''
         percent: 80
-        icon: cat
+        icon: : gear: 
       - name: Robotics
         description: ''
         percent: 60
