@@ -239,4 +239,4 @@ languages:
 
 ## About Me
 
-Luca Santoro is a dedicated researcher at the Politecnico di Torino, within the Department of Mechanical and Aerospace Engineering. His expertise lies in non-destructive testing techniques and the mechanical fatigue of materials. He specializes in active thermography and innovative ultrasonic applications, with a recent focus on using thermography for monitoring welding processes. His work has led to significant industrial applications and the development of patents, contributing to advancements
+I am a dedicated researcher at the Politecnico di Torino, within the Department of Mechanical and Aerospace Engineering. My expertise lies in non-destructive testing techniques and the mechanical fatigue of materials. I specialize in active thermography and innovative ultrasonic applications, with a recent focus on using thermography for monitoring welding processes. My work has led to significant industrial applications and the development of patents, contributing to advancements in the field.
