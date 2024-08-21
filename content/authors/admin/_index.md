@@ -171,7 +171,7 @@ skills:
       - name: Python
         description: ''
         percent: 80
-        icon: devicon/python
+        icon: python
       - name: Computer vision
         description: ''
         percent: 100
