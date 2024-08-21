@@ -59,8 +59,8 @@ education:
       url: 'https://example.com'
   - area: MEng Mechanical Engineering
     institution: Politecnico di Torino
-    date_start: 2019-10
-    date_end: 2021-10
+    date_start: 2019-10-01
+    date_end: 2021-10-01
     summary: |
       110/100
 
@@ -68,8 +68,8 @@ education:
       -Experience in student teams
   - area: BSc Mechanical Engineering
     institution: Massachusetts Institute of Technology
-    date_start: 2016-11
-    date_end: 2019-07
+    date_start: 2016-11-01
+    date_end: 2019-07-01
     summary: |
       102/110
       
