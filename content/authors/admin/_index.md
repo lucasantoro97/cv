@@ -1,13 +1,13 @@
 ---
 # Display name
-title: 吳健雄
+title: Luca Santoro
 
 # Name pronunciation (optional)
-name_pronunciation: Chien Shiung Wu
+name_pronunciation: ''
 
 # Full name (for SEO)
-first_name: Shiung Wu
-last_name: Chien
+first_name: Luca
+last_name: Santoro
 
 # Status emoji
 status:
@@ -20,92 +20,92 @@ superuser: true
 highlight_name: true
 
 # Role/position/tagline
-role: Chief Scientist
+role: Researcher
 
 # Organizations/Affiliations to display in Biography blox
 organizations:
-  - name: OpenAI
-    url: https://openai.com/
+  - name: Politecnico di Torino
+    url: https://www.polito.it/
 
 # Social network links
 # Need to use another icon? Simply download the SVG icon to your `assets/media/icons/` folder.
 profiles:
   - icon: at-symbol
-    url: 'mailto:your-email@example.com'
+    url: 'mailto:luca.santoro@polito.it'
     label: E-mail Me
-  - icon: brands/x
-    url: https://twitter.com/GetResearchDev
-  - icon: brands/instagram
-    url: https://www.instagram.com/
-  - icon: brands/github
-    url: https://github.com/gcushen
+  # - icon: brands/x
+  #   url: https://twitter.com/GetResearchDev
+  # - icon: brands/instagram
+  #   url: https://www.instagram.com/
+  # - icon: brands/github
+    url: https://github.com/lucasantoro97
   - icon: brands/linkedin
-    url: https://www.linkedin.com/
+    url: https://www.linkedin.com/in/luca-santoro-b16699151/
   - icon: academicons/google-scholar
-    url: https://scholar.google.com/
+    url: https://scholar.google.com/citations?user=xgJHkPcAAAAJ
   - icon: academicons/orcid
-    url: https://orcid.org/
+    url: https://orcid.org/0000-0003-3135-4920
 
 interests:
   - Artificial Intelligence
-  - Computational Linguistics
-  - Information Retrieval
+  - Non Destructive Testing
+  - Weldings
 
 education:
-  - area: PhD Artificial Intelligence
-    institution: Stanford University
-    date_start: 2016-01-01
-    date_end: 2020-12-31
+  - area: PhD Machine Design
+    institution: Politecnico di Torino
+    date_start: 2021-10-01
+    date_end: 2024-09-30
     summary: |
-      Thesis on _Why LLMs are awesome_. Supervised by [Prof Joe Smith](https://example.com). Presented papers at 5 IEEE conferences with the contributions being published in 2 Springer journals.
+      Thesis on _Use of Thermography for welding process monitoring_. Supervised by [Prof Raffaella Sesana, Prof Francesca Maria Cura](https://example.com). Presented papers at over 10 conferences and over 15 published journal paper.
     button:
       text: 'Read Thesis'
       url: 'https://example.com'
-  - area: MEng Artificial Intelligence
-    institution: Massachusetts Institute of Technology
-    date_start: 2016-01-01
-    date_end: 2020-12-31
+  - area: MEng Mechanical Engineering
+    institution: Politecnico di Torino
+    date_start: 2019-10
+    date_end: 2021-10
     summary: |
-      GPA: 3.8/4.0
+      110/100
 
-      Courses included:
-      - lorem ipsum dolor sit amet, consectetur adipiscing elit
-      - lorem ipsum dolor sit amet, consectetur adipiscing elit
-      - lorem ipsum dolor sit amet, consectetur adipiscing elit
-  - area: BSc Artificial Intelligence
+      -International course with lesson taught in english
+      -Experience in student teams
+  - area: BSc Mechanical Engineering
     institution: Massachusetts Institute of Technology
-    date_start: 2016-01-01
-    date_end: 2020-12-31
+    date_start: 2016-11
+    date_end: 2019-07
     summary: |
-      GPA: 3.4/4.0
+      102/110
       
-      Courses included:
-      - lorem ipsum dolor sit amet, consectetur adipiscing elit
-      - lorem ipsum dolor sit amet, consectetur adipiscing elit
-      - lorem ipsum dolor sit amet, consectetur adipiscing elit
+      -Experience in student teams
 work:
-  - position: Director of Cloud Infrastructure
-    company_name: GenCoin
+  - position: Nominated TT examiner (ISO 9712 level 1, 2 and 3)
+    company_name: Ades Group
     company_url: ''
     company_logo: ''
-    date_start: 2021-01-01
+    date_start: 2024-07-01
     date_end: ''
     summary: |2-
       Responsibilities include:
-      - lorem ipsum dolor sit amet, consectetur adipiscing elit
-      - lorem ipsum dolor sit amet, consectetur adipiscing elit
-      - lorem ipsum dolor sit amet, consectetur adipiscing elit
-  - position: Backend Software Engineer
-    company_name: X
+      - Conducting thermographic testing examinations in compliance with ISO 9712 standards for levels 1, 2, and 3.
+      - Evaluating and certifying the competence of NDT personnel through practical and theoretical assessments.
+      - Preparing and reviewing examination documentation, ensuring accuracy and compliance with industry requirements.
+
+  - position: Member - Working Group NDT in Additive Manufacturing
+    company_name: AIPnD ETS Italian Society for NDT
     company_url: ''
     company_logo: ''
-    date_start: 2016-01-01
-    date_end: 2020-12-31
-    summary: |
-      Responsibilities include:
-      - Migrated infrastructure to a new data center
-      - lorem ipsum dolor sit amet, consectetur adipiscing elit
-      - lorem ipsum dolor sit amet, consectetur adipiscing elit
+    date_start: 2024-05-01
+    date_end: ''
+    summary: |''
+
+  - position: Guest Scientist
+    company_name: Technical University of Munich
+    company_url: ''
+    company_logo: ''
+    date_start: 2023-03-01
+    date_end: 2023-07-31
+    summary: |''
 
 # Skills
 # Add your own SVG icons to `assets/media/icons/`
@@ -116,38 +116,38 @@ skills:
         description: ''
         percent: 80
         icon: code-bracket
-      - name: Data Science
+      - name: Computer vision
         description: ''
         percent: 100
-        icon: chart-bar
-      - name: SQL
+        icon: eye
+      - name: FEA
         description: ''
         percent: 40
         icon: circle-stack
-  - name: Hobbies
-    color: '#eeac02'
-    color_border: '#f0bf23'
-    items:
-      - name: Hiking
-        description: ''
-        percent: 60
-        icon: person-simple-walk
-      - name: Cats
-        description: ''
-        percent: 100
-        icon: cat
-      - name: Photography
-        description: ''
-        percent: 80
-        icon: camera
+  # - name: Hobbies
+  #   color: '#eeac02'
+  #   color_border: '#f0bf23'
+  #   items:
+  #     - name: Hiking
+  #       description: ''
+  #       percent: 60
+  #       icon: person-simple-walk
+  #     - name: Cats
+  #       description: ''
+  #       percent: 100
+  #       icon: cat
+  #     - name: Photography
+  #       description: ''
+  #       percent: 80
+  #       icon: camera
 
 languages:
   - name: English
     percent: 100
-  - name: Chinese
-    percent: 75
-  - name: Portuguese
-    percent: 25
+  - name: Italian
+    percent: 100
+  - name: Spanish
+    percent: 40
 
 # Awards.
 #   Add/remove as many awards below as you like.
