@@ -35,4 +35,7 @@ image:
   caption: 'Neural Network Architecture'
   focal_point: ""
   preview_only: false
+
+# Display this page in the Featured widget?
+featured: true
 ---

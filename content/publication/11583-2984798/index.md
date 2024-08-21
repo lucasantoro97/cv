@@ -33,4 +33,8 @@ image:
   caption: 'Fatigue Safety Factor on a 3d scan of a welded joint'
   focal_point: ""
   preview_only: false
+
+# Display this page in the Featured widget?
+featured: true
+
 ---

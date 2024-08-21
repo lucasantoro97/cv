@@ -43,4 +43,7 @@ image:
   caption: 'Self Heating of AM specimen under cyclic loading'
   focal_point: ""
   preview_only: false
+
+# Display this page in the Featured widget?
+featured: true 
 ---
