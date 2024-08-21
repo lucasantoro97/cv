@@ -33,11 +33,7 @@ profiles:
   - icon: at-symbol
     url: 'mailto:luca.santoro@polito.it'
     label: E-mail Me
-  # - icon: brands/x
-  #   url: https://twitter.com/GetResearchDev
-  # - icon: brands/instagram
-  #   url: https://www.instagram.com/
-  # - icon: brands/github
+  - icon: brands/github
     url: https://github.com/lucasantoro97
   - icon: brands/linkedin
     url: https://www.linkedin.com/in/luca-santoro-b16699151/
