@@ -43,7 +43,7 @@ profiles:
     url: https://orcid.org/0000-0003-3135-4920
   - icon: academicons/researchgate
     url: https://www.researchgate.net/profile/Luca-Santoro-6
-  -icon: academicons/scopus
+  - icon: academicons/scopus
     url: https://www.scopus.com/authid/detail.uri?authorId=59099828600
 
 interests:
