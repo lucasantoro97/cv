@@ -71,7 +71,7 @@ education:
       -International course with lesson taught in english
       -Experience in student teams
   - area: BSc Mechanical Engineering
-    institution: Massachusetts Institute of Technology
+    institution: Politecnico di Torino
     date_start: 2016-11-01
     date_end: 2019-07-01
     summary: |
