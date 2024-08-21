@@ -28,4 +28,11 @@ tags:
 links:
 - name: URL
   url: https://link.springer.com/article/10.1007/s00170-024-14096-4
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder. 
+image:
+  caption: 'Neural Network Architecture'
+  focal_point: ""
+  preview_only: false
 ---

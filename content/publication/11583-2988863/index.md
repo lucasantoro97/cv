@@ -36,4 +36,11 @@ tags:
 links:
 - name: URL
   url: https://www.sciencedirect.com/science/article/pii/S1350630724004928?via=ihub
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder. 
+image:
+  caption: 'Self Heating of AM specimen under cyclic loading'
+  focal_point: ""
+  preview_only: false
 ---

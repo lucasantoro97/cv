@@ -26,4 +26,11 @@ abstract: Mechanical joiningtechniquesarefundamental intheindustrial landscape,w
 links:
 - name: URL
   url: https://www.sciencedirect.com/science/article/pii/S1350630723008981?via=ihub
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder. 
+image:
+  caption: 'Fatigue Safety Factor on a 3d scan of a welded joint'
+  focal_point: ""
+  preview_only: false
 ---
