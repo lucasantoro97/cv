@@ -41,6 +41,10 @@ profiles:
     url: https://scholar.google.com/citations?user=xgJHkPcAAAAJ
   - icon: academicons/orcid
     url: https://orcid.org/0000-0003-3135-4920
+  - icon: academicons/researchgate
+    url: https://www.researchgate.net/profile/Luca-Santoro-6
+  -icon: academicons/scopus
+    url: https://www.scopus.com/authid/detail.uri?authorId=59099828600
 
 interests:
   - Artificial Intelligence
@@ -99,17 +103,66 @@ work:
       # - Evaluating and certifying the competence of NDT personnel through practical and theoretical assessments.
       # - Preparing and reviewing examination documentation, ensuring accuracy and compliance with industry requirements.
 
-  - position: Guest Scientist
-    company_name: Technical University of Munich
-    company_url: ''
-    company_logo: ''
-    date_start: 2023-03-01
-    date_end: 2023-07-31
-    summary: |2-
-      Research Topic:
-      - Additive manufacturing on stainless steel for civil applications.
-      - Fatigue behaviour of AM materials.
-      - Iterative metodology using thermography for fast evaluation of fatigue limit.
+- position: Technical Manager
+  company_name: Studio di Ingegneria Luca Santoro - Autonomo
+  company_url: ''
+  company_logo: ''
+  date_start: 2020-12-01
+  date_end: 2024-06-30
+  summary: |2-
+    Responsibilities include:
+    - Managing fracture mechanics projects and finite element analysis.
+    - Conducting technical analysis using python.
+    - Overseeing project management and client relations.
+
+- position: Guest Scientist
+  company_name: Technical University of Munich
+  company_url: ''
+  company_logo: ''
+  date_start: 2023-04-01
+  date_end: 2023-07-31
+  summary: |2-
+    Research Topic:
+    - Additive manufacturing on stainless steel for civil applications.
+    - Fatigue behaviour of AM materials.
+    - Iterative methodology using thermography for fast evaluation of fatigue limit.
+
+- position: Intern
+  company_name: ADES GROUP
+  company_url: ''
+  company_logo: ''
+  date_start: 2021-03-01
+  date_end: 2021-06-30
+  summary: |2-
+    Responsibilities include:
+    - Developed technical procedures for residual stress detection in steel welds using active thermography.
+    - Collaborated in metallurgy, welding, and fracture mechanics projects.
+    - Conducted metallographic analysis and phase contrast studies.
+
+- position: Research Fellow
+  company_name: Politecnico di Torino
+  company_url: ''
+  company_logo: ''
+  date_start: 2019-10-01
+  date_end: 2020-10-31
+  summary: |2-
+    Research Topic:
+    - Design and experimentation of mechanical drive components.
+    - Study of thermography and damping materials.
+    - Conducted research in the "DESIGN AND EXPERIMENTATION OF MECHANICAL DRIVE COMPONENTS, THERMOGRAPHY AND DAMPING MATERIALS" group.
+
+- position: Intern
+  company_name: ADES GROUP
+  company_url: ''
+  company_logo: ''
+  date_start: 2019-08-01
+  date_end: 2019-10-31
+  summary: |2-
+    Responsibilities include:
+    - Involved in corrosion engineering and risk-based inspection (RBI) according to API 580, API 581 standards.
+    - Conducted technical analysis and supported engineering projects in the Priolo Gargallo facility.
+
+  
 # Skills
 # Add your own SVG icons to `assets/media/icons/`
 skills:
@@ -118,31 +171,31 @@ skills:
       - name: Python
         description: ''
         percent: 80
-        icon: code-bracket
+        icon: devicon/python
       - name: Computer vision
         description: ''
         percent: 100
         icon: eye
       - name: FEA
         description: ''
-        percent: 40
+        percent: 80
         icon: circle-stack
-  # - name: Hobbies
-  #   color: '#eeac02'
-  #   color_border: '#f0bf23'
-  #   items:
-  #     - name: Hiking
-  #       description: ''
-  #       percent: 60
-  #       icon: person-simple-walk
-  #     - name: Cats
-  #       description: ''
-  #       percent: 100
-  #       icon: cat
-  #     - name: Photography
-  #       description: ''
-  #       percent: 80
-  #       icon: camera
+  - name: Lab Skill
+    color: '#eeac02'
+    color_border: '#f0bf23'
+    items:
+      - name: Mechanical Testing
+        description: ''
+        percent: 100
+        icon: person-simple-walk
+      - name: Metallurgy
+        description: ''
+        percent: 80
+        icon: cat
+      - name: Robotics
+        description: ''
+        percent: 60
+        icon: camera
 
 languages:
   - name: English
