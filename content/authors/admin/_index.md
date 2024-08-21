@@ -94,6 +94,10 @@ work:
     date_start: 2024-05-01
     date_end: ''
     summary: ''
+      # Responsibilities include:
+      # - Conducting thermographic testing examinations in compliance with ISO 9712 standards for levels 1, 2, and 3.
+      # - Evaluating and certifying the competence of NDT personnel through practical and theoretical assessments.
+      # - Preparing and reviewing examination documentation, ensuring accuracy and compliance with industry requirements.
 
   - position: Guest Scientist
     company_name: Technical University of Munich
@@ -101,8 +105,11 @@ work:
     company_logo: ''
     date_start: 2023-03-01
     date_end: 2023-07-31
-    summary: ''
-
+    summary: |2-
+      Research Topic:
+      - Additive manufacturing on stainless steel for civil applications.
+      - Fatigue behaviour of AM materials.
+      - Iterative metodology using thermography for fast evaluation of fatigue limit.
 # Skills
 # Add your own SVG icons to `assets/media/icons/`
 skills:
