@@ -93,7 +93,7 @@ work:
     company_logo: ''
     date_start: 2024-05-01
     date_end: ''
-    summary: |''
+    summary: ''
 
   - position: Guest Scientist
     company_name: Technical University of Munich
@@ -101,7 +101,7 @@ work:
     company_logo: ''
     date_start: 2023-03-01
     date_end: 2023-07-31
-    summary: |''
+    summary: ''
 
 # Skills
 # Add your own SVG icons to `assets/media/icons/`
