@@ -56,6 +56,7 @@ education:
     institution: Politecnico di Torino
     date_start: 2021-10-01
     date_end: 2024-09-30
+    url: 'https://www.polito.it/'
     summary: |
       Thesis on _Use of Thermography for welding process monitoring_. Supervised by [Prof Raffaella Sesana, Prof Francesca Maria Cura](https://example.com). Presented papers at over 10 conferences and over 15 published journal paper.
     button:
@@ -81,8 +82,8 @@ education:
 work:
   - position: Nominated TT examiner (ISO 9712 level 1, 2 and 3)
     company_name: Ades Group
-    company_url: ''
-    company_logo: ''
+    company_url: 'https://www.adesndt.com/en/'
+    company_logo: 'logo_ades'
     date_start: 2024-07-01
     date_end: ''
     summary: |2-
@@ -93,7 +94,7 @@ work:
 
   - position: Member - Working Group NDT in Additive Manufacturing
     company_name: AIPnD ETS Italian Society for NDT
-    company_url: ''
+    company_url: 'https://www.aipnd.it/'
     company_logo: ''
     date_start: 2024-05-01
     date_end: ''
@@ -129,7 +130,7 @@ work:
 
   - position: Intern
     company_name: ADES GROUP
-    company_url: ''
+    company_url: 'https://www.adesndt.com/en/'
     company_logo: ''
     date_start: 2021-03-01
     date_end: 2021-06-30
@@ -141,7 +142,7 @@ work:
 
   - position: Research Fellow
     company_name: Politecnico di Torino
-    company_url: ''
+    company_url: 'https://www.polito.it/'
     company_logo: ''
     date_start: 2019-10-01
     date_end: 2020-10-31
@@ -153,7 +154,7 @@ work:
 
   - position: Intern
     company_name: ADES GROUP
-    company_url: ''
+    company_url: 'https://www.adesndt.com/en/'
     company_logo: ''
     date_start: 2019-08-01
     date_end: 2019-10-31
