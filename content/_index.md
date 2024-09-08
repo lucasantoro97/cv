@@ -40,8 +40,6 @@ sections:
         I employ both qualitative and quantitative approaches to deeply analyze the intersection of science, engineering, and technology in industry applications.
 
         Feel free to connect for collaboration opportunities 😃
-
-
     design:
       columns: '1'
   - block: collection
@@ -56,6 +54,16 @@ sections:
       view: article-grid
       columns: 2
   - block: collection
+  id: talks
+  content:
+    title: Recent & Upcoming Talks
+    filters:
+      folders:
+        - event
+  design:
+    view: article-grid
+    columns: 1  
+  - block: collection
     content:
       title: Recent Publications
       text: ""
@@ -65,16 +73,7 @@ sections:
         exclude_featured: false
     design:
       view: citation
-  - block: collection
-    id: talks
-    content:
-      title: Recent & Upcoming Talks
-      filters:
-        folders:
-          - event
-    design:
-      view: article-grid
-      columns: 1
+
       
   # - block: collection
   #   id: news
