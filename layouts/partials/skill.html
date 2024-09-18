@@ -1,9 +1,8 @@
 {{ range .items }}
   <div class="skill">
     <p>{{ .name }}</p>
-    <!-- Render the icon dynamically using template syntax -->
-    {{ $icon := .icon }}
-    {{ partial "icons/icon.html" (dict "vendor" "font-awesome" "name" $icon) }}
+    <!-- Render the icon using the Hugo Mods partial -->
+    {{ partial "icons/icon.html" (dict "vendor" "font-awesome" "name" .icon) }}
     <p>{{ .percent }}%</p>
   </div>
 {{ end }}
