@@ -25,6 +25,7 @@ mounts:
     target: layouts
   - source: assets
     target: assets
-
+  - source: github.com/hugomods/icons/vendors/font-awesome/icons
+    target: assets/icons/custom/fontawesome
 
 
