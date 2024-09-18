@@ -27,6 +27,7 @@ sections:
           filename: background.png
           filters:
             brightness: 1.0
+            opacity: 0.6
           size: cover
           position: center
           parallax: false
