@@ -182,8 +182,6 @@ skills:
         percent: 80
         icon: circle-stack
   - name: Lab Skill
-    color: '#FFFFFF'
-    color_border: '#FFFFFF'
     items:
       - name: Mechanical Testing
         description: ''
