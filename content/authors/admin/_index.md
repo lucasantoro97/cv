@@ -186,18 +186,16 @@ skills:
       - name: Mechanical Testing
         description: ''
         percent: 100
-        icon:
-          name: custom/gear-solid
+        icon: "font-awesome/solid/gear"
       - name: Metallurgy
         description: ''
         percent: 80
-        icon:
-          name: custom/flask-vial-solid
+        icon: "font-awesome/solid/flask-vial"
       - name: Robotics
         description: ''
         percent: 60
-        icon:
-          name: custom/robot-solid
+        icon: "font-awesome/solid/robot"
+
 
 
 
