@@ -1,8 +1,9 @@
 {{ range .items }}
   <div class="skill">
     <p>{{ .name }}</p>
-    <!-- Render the icon shortcode using the icon name from YAML -->
-    {{< ico "font-awesome" (index . "icon") >}}
+    <!-- Render the icon dynamically using template syntax -->
+    {{ $icon := .icon }}
+    {{ partial "icons/icon.html" (dict "vendor" "font-awesome" "name" $icon) }}
     <p>{{ .percent }}%</p>
   </div>
 {{ end }}
