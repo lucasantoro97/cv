@@ -1,0 +1,8 @@
+{{ range .items }}
+  <div class="skill">
+    <p>{{ .name }}</p>
+    <!-- Render the shortcode string from YAML using safeHTML -->
+    {{ .icon | safeHTML }}
+    <p>{{ .percent }}%</p>
+  </div>
+{{ end }}
