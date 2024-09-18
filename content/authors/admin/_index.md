@@ -186,7 +186,7 @@ skills:
       - name: Mechanical Testing
         description: ''
         percent: 100
-        icon: "vendors/font-awesome/gear-solid"  # Just the icon name
+        icon: fas gear-solid  # Just the icon name
       - name: Metallurgy
         description: ''
         percent: 80
