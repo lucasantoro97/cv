@@ -186,16 +186,15 @@ skills:
       - name: Mechanical Testing
         description: ''
         percent: 100
-        icon: "{{< icons/icon vendor='font-awesome' name='gear' >}}"
+        icon: "{{< ico 'font-awesome' 'gear' >}}"
       - name: Metallurgy
         description: ''
         percent: 80
-        icon: "{{< icons/icon vendor='font-awesome' name='flask-vial' >}}"
+        icon: "{{< ico 'font-awesome' 'flask-vial' >}}"
       - name: Robotics
         description: ''
         percent: 60
-        icon: "{{< icons/icon vendor='font-awesome' name='robot' >}}"
-
+        icon: "{{< ico 'font-awesome' 'robot' >}}"
 
 
 
