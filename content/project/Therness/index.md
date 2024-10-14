@@ -1,14 +1,14 @@
 ---
 title: Therness POC project
 date: 2024-05-01
-url: "/project/Therness/"
 tags:
   - Active Thermography
   - Welding Process
   - Spin off
 ---
 
-Thernness is proud to be selected for Tech4Planet’s Pre-seed investment, leveraging cutting-edge thermography to monitor processes and assess the mechanical and thermal properties of materials and components. Our mission is to enhance safety and significantly reduce waste through innovative non-destructive testing (NDT) solutions. Originating from the Thexor research group at Politecnico di Torino, which boasts over 30 years of expertise in thermography and NDT, Thernness brings a wealth of knowledge and experience to the field.
+Thernness is proud to be selected for Tech4Planet’s Pre-seed investment, leveraging cutting-edge thermography to monitor processes and assess the mechanical and thermal properties of materials and components. Our mission is to enhance safety and significantly reduce waste through innovative non-destructive testing (NDT) solutions. Originating from the Thexor research group at Politecnico di Torino, which boasts over 30 years of expertise in thermography and NDT, Thernness brings a wealth of knowledge and experience to the field. 
+[Read more about Therness](https://www.linkedin.com/posts/tech4planet-polo-nazionale-di-trasferimento-tecnologico-per-la-sostenibilit%C3%A0-ambientale_presentiamo-therness-il-team-selezionato-activity-7213906634337624064-qwhW/?originalSubdomain=it).
 
 The global NDT market is projected to reach €18.4 billion, underscoring the increasing demand for reliable and advanced technologies like those developed by Thernness. With support from Tech4Planet’s Proof of Concept (POC) investment, we are developing an automated thermographic system for in-line monitoring of metal welding processes. This state-of-the-art system ensures 100% observation of welding operations, enhancing existing control mechanisms required by industry standards to promptly identify potential anomalies.
 
