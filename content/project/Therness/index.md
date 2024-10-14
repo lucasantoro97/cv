@@ -1,6 +1,9 @@
 ---
 title: Therness POC project
+date: 2024-05-01
 external_link: https://www.linkedin.com/posts/tech4planet-polo-nazionale-di-trasferimento-tecnologico-per-la-sostenibilit%C3%A0-ambientale_presentiamo-therness-il-team-selezionato-activity-7213906634337624064-qwhW/?originalSubdomain=it
+url: "/project/Therness/"
+
 tags:
   - Active Thermography
   - Welding Process
