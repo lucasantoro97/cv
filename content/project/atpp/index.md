@@ -1,7 +1,6 @@
 ---
 title: ATPP - Active Thermography Test Post-Processing 
 date: 2024-09-16
-external_link: https://github.com/lucasantoro97/atpp
 tags:
   - Active Thermography
   - Computer Vision
