@@ -36,4 +36,15 @@ abstract: The non-destructive full-field non-contact thermographic technique is 
 links:
 - name: URL
   url: https://link.springer.com/article/10.1007/s00170-023-12044-2
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder. 
+image:
+  caption: 'Neural Network Architecture'
+  focal_point: ""
+  preview_only: false
+
+# Display this page in the Featured widget?
+featured: true
+---
 ---

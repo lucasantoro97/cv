@@ -27,4 +27,14 @@ abstract: In the present paper, the results of a research focused on microstruct
 tags:
 - Active thermography; Welded joint; Microstructure
 url_pdf: https://link.springer.com/content/pdf/10.1007/s00170-023-11951-8.pdf
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder. 
+image:
+  caption: 'Neural Network Architecture'
+  focal_point: ""
+  preview_only: false
+
+# Display this page in the Featured widget?
+featured: true
 ---
