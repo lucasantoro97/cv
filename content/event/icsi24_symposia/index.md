@@ -7,8 +7,8 @@ event_url: https://www.icsi.pt/
 location: Pestana Casino Park Hotel & Casino
 address: 
   street: ''
-  city: Funchal, Madeira
-  region: ''
+  city: Funchal
+  region: 'Madeira'
   postcode: ''
   country: Portugal
 
