@@ -1,5 +1,5 @@
 ---
-title: Structural Integrity Evaluation of Welded Structures- Damage Assessment, Fatigue Analysis, and Non-Destructive Testing 
+title: SYMPOSIUM - Structural Integrity Evaluation of Welded Structures- Damage Assessment, Fatigue Analysis, and Non-Destructive Testing 
 
 event: ICSI2025
 event_url: https://www.icsi.pt/
