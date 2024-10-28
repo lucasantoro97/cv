@@ -7,7 +7,7 @@ event_url: https://www.icsi.pt/
 location: Pestana Casino Park Hotel & Casino
 address: 
   street: ''
-  city: Madeira
+  city: Funchal, Madeira
   region: ''
   postcode: ''
   country: Portugal
@@ -27,13 +27,13 @@ publishDate: '2022-09-01T00:00:00Z'
 authors:
   - admin
 
-tags: ["Thermography","Conference"]
+tags: ["Weldings","Conference"]
 
 # Is this a featured talk? (true/false)
 featured: false
 
 image:
-  caption: 'ISEIA 2024'
+  caption: 'Funchal, Madeira'
   focal_point: Right
 
 #links:
