@@ -41,7 +41,7 @@ image:
 #    icon_pack: fab
 #    name: Follow
 #    url: https://twitter.com/georgecushen
-url_code: ''
+url_code: 'https://www.icsi.pt/'
 url_pdf: 'https://icsi.pt/files/2025/Symposium_G.pdf'
 url_slides: ''
 url_video: ''
