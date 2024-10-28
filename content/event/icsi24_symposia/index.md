@@ -12,8 +12,36 @@ address:
   postcode: ''
   country: Portugal
 
-summary: 6th International Conference on Structural Integrity (ICSI2025).
-abstract: 'ICSI focuses on all aspects and scales of structural integrity, from the basics to future trends, with special emphasis on multi-scale and multi-physics approaches and applications to new materials and challenging environments.'
+summary: 'Welded structures are fundamental to numerous engineering applications, including aerospace, automotive, construction, and maritime industries. The integrity of welded joints is critical to the overall safety and performance of these structures. This symposium aims to bring together researchers, industry professionals, and practitioners to discuss the latest advancements in the evaluation of structural integrity of welded components.'
+
+abstract: 'The focus will be on comprehensive approaches to damage evaluation and assessment, fatigue behavior analysis, and the application of non-destructive testing (NDT) techniques in welding. By addressing these key areas, the symposium seeks to enhance understanding of the mechanisms affecting weld integrity and to promote innovative solutions for detecting and mitigating potential failures.
+
+### Topics of Interest
+
+#### Damage Evaluation Techniques
+- Detection and characterization of weld defects
+- Microstructural analysis of welded joints
+- Impact of welding processes on material properties
+
+#### Fatigue Analysis
+- Fatigue life prediction models for weldments
+- Influence of loading conditions on fatigue behavior
+- Experimental and computational studies on weld fatigue
+
+#### Non-Destructive Testing Methods
+- Advanced NDT techniques (ultrasonic testing, radiography, thermography)
+- Real-time monitoring of weld quality
+- Integration of NDT with structural health monitoring systems
+
+#### Residual Stress and Distortion Analysis
+- Measurement and modeling of residual stresses in welds
+- Effects of residual stresses on structural integrity
+- Mitigation strategies for welding-induced distortions
+
+#### Case Studies and Applications
+- Failure analysis of welded structures
+- Industry best practices in welding inspection
+- Standardization and regulatory aspects of weld evaluation'
 
 # Talk start and end times.
 #   End time can optionally be hidden by prefixing the line with `#`.
