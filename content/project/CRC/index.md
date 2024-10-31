@@ -26,7 +26,7 @@ Using Cuneo as a case study for sustainable practices, the project serves as a m
 ### Partners
 
 - **DIMEAS - Department of Mechanical and Aerospace Engineering**
-- **Brondello Erminio SNC**
+- **Brondello Erminio SAS**
 - **Goletto Legnami**
 - **Politecnico di Torino - Administration**
 - **Segheria Cervella**
