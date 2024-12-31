@@ -16,4 +16,14 @@ doi: 10.1109/ACCESS.2024.3524238
 links:
 - name: URL
   url: https://ieeexplore.ieee.org/document/10818657/
+url_pdf: https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=10818657
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder. 
+image:
+  caption: 'Histeresis VS Frequency'
+  focal_point: ""
+  preview_only: false
+
+# Display this page in the Featured widget?
+featured: true
 ---
