@@ -13,4 +13,14 @@ doi: 10.1016/J.APPLTHERMALENG.2025.125900
 links:
 - name: URL
   url: https://linkinghub.elsevier.com/retrieve/pii/S1359431125004910
+
+# Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder. 
+image:
+  caption: 'Phase diagram'
+  focal_point: ""
+  preview_only: false
+
+# Display this page in the Featured widget?
+featured: true
 ---
