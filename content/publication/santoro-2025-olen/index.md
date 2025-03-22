@@ -39,4 +39,14 @@ tags:
 - name: URL
   url: 
     https://www.scopus.com/inward/record.uri?eid=2-s2.0-85218335460&doi=10.1016%2fj.optlaseng.2025.108901&partnerID=40&md5=ad51614c184c5aee3eb124c549ae261a
+
+  # Featured image
+# To use, add an image named `featured.jpg/png` to your page's folder. 
+image:
+  caption: 'Phase diagram'
+  focal_point: ""
+  preview_only: false
+
+# Display this page in the Featured widget?
+featured: true
 ---
