@@ -35,11 +35,7 @@ abstract: Active thermography (AT) has emerged as a critical non-destructive tes
   improve the detection of smaller and shallower defects, thereby advancing the precision
   and efficacy of thermal analysis techniques. © 2025 The Author(s)
 tags:
-- Image coding; Image segmentation; Laser materials processing; Photomapping; Active
-  thermography; Flying spot laser thermography; Heat input; Independent components
-  analysis; Non destructive testing; Non-destructive testing and evaluations; Principal-component
-  analysis; Signal-processing; Thermal; Thermal signals; Thermography (imaging)
-links:
+- Image segmentation; Active thermography; Flying spot laser thermography; Non destructive testing;
 - name: URL
   url: 
     https://www.scopus.com/inward/record.uri?eid=2-s2.0-85218335460&doi=10.1016%2fj.optlaseng.2025.108901&partnerID=40&md5=ad51614c184c5aee3eb124c549ae261a
