@@ -80,14 +80,6 @@ Therness is backed by **Tech4Planet**, Italy's National Technology Transfer Hub 
 
 This spinoff builds upon extensive research conducted at Politecnico di Torino:
 
-**Core Research Projects:**
-- [**NDTxW Project**](/project/ndtxw/) - Non-Destructive Testing Methods for Welded Joints Using Active Thermography
-- [**ATPP Library**](/project/atpp/) - Active Thermography Test Post-Processing Python library for FLIR thermal camera data
-
-**Key Publications:**
-- [Frequency-based methods for quantitative evaluation of resistance spot welds](/publication/santoro-2025/) - Comprehensive framework integrating IR thermography and electrode surface imaging
-- [Active Thermography Research](/publication/) - Browse all publications on thermography and NDT applications
-
 **Research Areas:**
 - Active Thermography for NDT Applications
 - Machine Learning in Welding Process Monitoring  
