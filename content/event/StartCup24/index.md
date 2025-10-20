@@ -21,6 +21,13 @@ abstract: >
 
   In addition, Therness has received significant funding from **Tech4Planet | Polo Nazionale di Trasferimento Tecnologico per la Sostenibilità Ambientale**, enabling us to further develop our thermal monitoring systems for industrial applications.
 
+  ### 🚀 Current Therness Solutions
+
+  Today, Therness offers comprehensive AI-powered welding inspection solutions:
+
+  - **[QMS Copilot™](https://www.therness.com/therness-qms-copilot)** - ISO 9001-aligned Quality Management System with AI-powered automation for CAPA/PPAP workflows and real-time SPC insights
+  - **[Complete Product Portfolio](https://www.therness.com/products)** - Advanced monitoring systems including HeatCore™ thermal cameras, VisiCore™ visual inspection, and SugarCube Cam™ for manual welding
+
 
   Stay tuned for more updates as we continue our journey towards innovation and excellence!
 

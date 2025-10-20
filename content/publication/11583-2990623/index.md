@@ -23,6 +23,13 @@ abstract: Resistance spot welding (RSW) is considered a preferred technique for 
   is based on the Inception V3 architecture, a state-of-the-art neural network that
   excels in image recognition tasks. This study suggests adopting a new methodology
   for automatic RSW quality control based on thermal signal analysis.
+
+  ### 🚀 Commercial Application
+
+  This neural network-based approach has been successfully commercialized through **[Therness](/project/therness/)**, offering:
+
+  - **[QMS Copilot™](https://www.therness.com/therness-qms-copilot)** - AI-powered Quality Management System integrating neural network analysis for automated quality control
+  - **[HeatCore™ AI Systems](https://www.therness.com/products)** - Advanced thermal monitoring solutions implementing the CNN-based evaluation methods described in this research
 tags: ["Resistance spot weld", "Quality","Convolutional neural network","Thermography","Welding"]
 # - Resistance spot weld · Quality · Convolutional neural network · Thermography · Welding
 

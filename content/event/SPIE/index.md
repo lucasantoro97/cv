@@ -56,6 +56,13 @@ I’m excited to share that I recently had the privilege of presenting two resea
 
 A special thanks to my co-authors and the SPIE community for the enriching experience and fruitful discussions.
 
-Feel free to connect if you’re interested in these topics or are working on similar research!
+### 🚀 Commercial Application
+
+This research has been successfully commercialized through **[Therness](/project/therness/)**, offering:
+
+- **[QMS Copilot™](https://www.therness.com/therness-qms-copilot)** - AI-powered Quality Management System for ISO 9001 compliance with automated CAPA/PPAP workflows
+- **[HeatCore™ Systems](https://www.therness.com/products)** - Advanced thermal monitoring solutions implementing the frequency-based evaluation methods presented
+
+Feel free to connect if you're interested in these topics or are working on similar research!
 
 #SPIE #Thermosense #Thermography #Welding #Research #QualityControl #InfraredImaging #PolitecnicodiTorino

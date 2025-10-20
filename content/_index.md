@@ -40,6 +40,8 @@ sections:
 
         I employ both qualitative and quantitative approaches to deeply analyze the intersection of science, engineering, and technology in industry applications.
 
+        **🚀 Spinoff Success:** My research has led to the creation of **[Therness](/project/therness/)**, a cutting-edge company specializing in AI-powered welding inspection systems that ensure 100% weld verification with zero guesswork.
+
         Feel free to connect for collaboration opportunities 😃
     design:
       columns: '1'
@@ -73,7 +75,27 @@ sections:
           - event
     design:
       view: article-grid
-      columns: 1  
+      columns: 1
+  - block: markdown
+    content:
+      title: '🚀 Spinoff Success: Therness'
+      subtitle: 'From Research to Industry Innovation'
+      text: |-
+        My research in active thermography and non-destructive testing has led to the successful creation of **Therness**, a cutting-edge spinoff company that revolutionizes welding quality control through AI-powered inspection systems.
+
+        **Key Achievements:**
+        - **€1.2M annual savings** achieved by European manufacturing clients
+        - **85% reduction in scrap** through early defect detection  
+        - **100% weld verification** with zero guesswork
+        - **Tech4Planet investment** for scaling operations
+
+        Therness represents the successful translation of academic research into industrial innovation, demonstrating the power of university-industry collaboration in advancing manufacturing technologies.
+
+        **[Learn more about Therness →](/project/therness/)** | **[QMS Copilot™ →](https://www.therness.com/therness-qms-copilot)** | **[Products →](https://www.therness.com/products)**
+    design:
+      css_class: dark
+      background:
+        color: primary  
       
   # - block: collection
   #   id: news

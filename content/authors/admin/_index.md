@@ -236,3 +236,12 @@ awards:
 ## About Me
 
 I am a dedicated researcher at the Politecnico di Torino, within the Department of Mechanical and Aerospace Engineering. My expertise lies in non-destructive testing techniques and the mechanical fatigue of materials. I specialize in active thermography and innovative ultrasonic applications, with a recent focus on using thermography for monitoring welding processes. My work has led to significant industrial applications and the development of patents, contributing to advancements in the field.
+
+### 🚀 Commercial Impact
+
+My research has successfully translated into **[Therness](/project/therness/)**, a cutting-edge spinoff company that revolutionizes welding quality control through AI-powered inspection systems. Therness offers:
+
+- **[QMS Copilot™](https://www.therness.com/therness-qms-copilot)** - ISO 9001-aligned, AI-powered Quality Management System that centralizes documents, automates CAPA/PPAP, and delivers real-time SPC insights
+- **[Complete Product Portfolio](https://www.therness.com/products)** - From entry-level thermal systems to advanced multi-modal platforms including HeatCore™, VisiCore™, and SugarCube Cam™
+
+The company has achieved remarkable results: **€1.2M annual savings** for European manufacturing clients and **85% reduction in scrap** through early defect detection.
