@@ -25,12 +25,7 @@ abstract: This paper presents a comprehensive framework integrating infrared (IR
   NDE techniques, enabling continuous, real-time quality monitoring and enhanced weld
   integrity assurance in high-volume manufacturing environments.
 
-  ### 🚀 Commercial Application
-
-  This research has been successfully commercialized through **[Therness](/project/therness/)**, offering:
-
-  - **[QMS Copilot™](https://www.therness.com/therness-qms-copilot)** - AI-powered Quality Management System for ISO 9001 compliance with automated CAPA/PPAP workflows
-  - **[HeatCore™ Systems](https://www.therness.com/products)** - Advanced thermal monitoring solutions for real-time weld quality assessment
+ 
 tags:
 - Carbon
 - Electrodes
