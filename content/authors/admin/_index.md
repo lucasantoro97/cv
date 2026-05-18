@@ -20,12 +20,14 @@ superuser: true
 highlight_name: true
 
 # Role/position/tagline
-role: Researcher
+role: Assistant Professor & Co-founder of Therness
 
 # Organizations/Affiliations to display in Biography blox
 organizations:
   - name: Politecnico di Torino
     url: https://www.polito.it/
+  - name: Therness
+    url: https://www.therness.com/
 
 # Social network links
 # Need to use another icon? Simply download the SVG icon to your `assets/media/icons/` folder.
@@ -48,8 +50,10 @@ profiles:
 
 interests:
   - Artificial Intelligence
-  - Non Destructive Testing
-  - Weldings
+  - Non-Destructive Testing
+  - Active Thermography
+  - Welding Process Monitoring
+  - Computer Vision
 
 education:
   - area: PhD Machine Design
@@ -58,28 +62,49 @@ education:
     date_end: 2024-09-30
     url: 'https://www.polito.it/'
     summary: |
-      Thesis on _Use of Thermography for welding process monitoring_. Supervised by [Prof Raffaella Sesana, Prof Francesca Maria Cura](https://example.com). Presented papers at over 10 conferences and over 15 published journal paper.
-    button:
-      text: 'Read Thesis'
-      url: 'https://example.com'
+      Thesis on _Use of Thermography for welding process monitoring_. Supervised by Prof. Raffaella Sesana and Prof. Francesca Maria Curà. Presented papers at over 10 international conferences and authored over 15 peer-reviewed journal papers.
   - area: MEng Mechanical Engineering
     institution: Politecnico di Torino
     date_start: 2019-10-01
     date_end: 2021-10-01
     summary: |
-      110/100
+      110/110
 
-      -International course with lesson taught in english
-      -Experience in student teams
+      - International programme taught in English.
+      - Active member of student engineering teams.
   - area: BSc Mechanical Engineering
     institution: Politecnico di Torino
     date_start: 2016-11-01
     date_end: 2019-07-01
     summary: |
       102/110
-      
-      -Experience in student teams
+
+      - Active member of student engineering teams.
 work:
+  - position: Co-founder & CEO
+    company_name: Therness S.r.l.
+    company_url: 'https://www.therness.com/'
+    company_logo: ''
+    date_start: 2024-04-22
+    date_end: ''
+    summary: |2-
+      Politecnico di Torino spinoff delivering AI-powered thermal monitoring for weld quality assurance.
+      - Leading product, strategy and go-to-market across the HeatCore software suite (Basic, AI, Robotic) and HeatCam IR-S/IR-C thermal cameras, PoolVision visual camera and HeatScan induction-pipe monitoring system.
+      - Built the AI NDT Agent free tool that generates ISO 9712 / ASNT Level III compliant NDT procedures.
+      - Selected for Tech4Planet Pre-seed investment program (CDP Venture Capital).
+
+  - position: Fixed-term Assistant Professor (RTD-A)
+    company_name: Politecnico di Torino - DIMEAS
+    company_url: 'https://www.polito.it/'
+    company_logo: ''
+    date_start: 2024-10-01
+    date_end: ''
+    summary: |2-
+      Research and teaching at the Department of Mechanical and Aerospace Engineering.
+      - Non-destructive testing and evaluation of welded joints.
+      - Active thermography and machine learning for material inspection.
+      - Mechanical fatigue analysis and welding process monitoring.
+
   - position: Nominated TT examiner (ISO 9712 level 1, 2 and 3)
     company_name: Ades Group
     company_url: 'https://www.adesndt.com/en/'
@@ -99,10 +124,6 @@ work:
     date_start: 2024-05-01
     date_end: ''
     summary: ''
-      # Responsibilities include:
-      # - Conducting thermographic testing examinations in compliance with ISO 9712 standards for levels 1, 2, and 3.
-      # - Evaluating and certifying the competence of NDT personnel through practical and theoretical assessments.
-      # - Preparing and reviewing examination documentation, ensuring accuracy and compliance with industry requirements.
 
   - position: Technical Manager
     company_name: Studio di Ingegneria Luca Santoro - Autonomo
@@ -113,7 +134,7 @@ work:
     summary: |2-
       Responsibilities include:
       - Managing fracture mechanics projects and finite element analysis.
-      - Conducting technical analysis using python.
+      - Conducting technical analysis with Python.
       - Overseeing project management and client relations.
 
   - position: Guest Scientist
@@ -235,13 +256,16 @@ awards:
 
 ## About Me
 
-I am a dedicated researcher at the Politecnico di Torino, within the Department of Mechanical and Aerospace Engineering. My expertise lies in non-destructive testing techniques and the mechanical fatigue of materials. I specialize in active thermography and innovative ultrasonic applications, with a recent focus on using thermography for monitoring welding processes. My work has led to significant industrial applications and the development of patents, contributing to advancements in the field.
+I am a Fixed-term Assistant Professor at the Politecnico di Torino, Department of Mechanical and Aerospace Engineering (DIMEAS), and Co-founder & CEO of [Therness](https://www.therness.com/), a Politecnico di Torino spinoff. My expertise lies in non-destructive testing, active thermography and welding process monitoring, with a focus on translating AI-driven inspection into industrial practice.
 
 ### 🚀 Commercial Impact
 
-My research has successfully translated into **[Therness](/project/therness/)**, a cutting-edge spinoff company that revolutionizes welding quality control through AI-powered inspection systems. Therness offers:
+My research has been translated into **[Therness](/project/therness/)**, a spinoff that builds AI-powered thermal monitoring for weld quality assurance. The current portfolio includes:
 
-- **[QMS Copilot™](https://www.therness.com/therness-qms-copilot)** - ISO 9001-aligned, AI-powered Quality Management System that centralizes documents, automates CAPA/PPAP, and delivers real-time SPC insights
-- **[Complete Product Portfolio](https://www.therness.com/products)** - From entry-level thermal systems to advanced multi-modal platforms including HeatCore™, VisiCore™, and SugarCube Cam™
+- **HeatCore software suite** — [Basic](https://www.therness.com/products/therness-heatcore-basic), [AI](https://www.therness.com/products/therness-heatcore-ai) and [Robotic](https://www.therness.com/products/therness-heatcore-robotic) tiers for live weld-pool view, inline anomaly detection and turnkey robotic cells.
+- **HeatCam thermal cameras** — [IR-C](https://www.therness.com/products/heatcam-ir-c) industrial reference sensor (up to 2000 °C, PoE/GigE Vision) and [IR-S](https://www.therness.com/products/heatcam-ir-s) compact variant for tight or embedded installs.
+- **[PoolVision](https://www.therness.com/products/therness-poolvision)** — 480 fps visual camera with laser-safe illumination.
+- **HeatScan** — purpose-built monitoring for induction pipe welding.
+- **AI NDT Agent** — free tool that generates ISO 9712 / ASNT Level III compliant NDT procedures.
 
-The company has achieved remarkable results: **€1.2M annual savings** for European manufacturing clients and **85% reduction in scrap** through early defect detection.
+Selected for the Tech4Planet Pre-seed investment program (CDP Venture Capital).

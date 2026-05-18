@@ -1,112 +1,91 @@
 ---
 title: Therness - AI-Powered Welding Inspection
-date: 2024-05-01
+summary: Politecnico di Torino spinoff delivering real-time thermal, visual and AI monitoring for weld quality assurance.
+date: 2024-04-22
 tags:
   - Active Thermography
-  - Welding Process
-  - Spin off
+  - Welding Process Monitoring
+  - Spinoff
   - AI Inspection
-  - Real-time Monitoring
+  - Computer Vision
   - Non-Destructive Testing
 featured: true
+external_link: https://www.therness.com
 ---
 
 ## About Therness
 
-**Therness** is a cutting-edge spinoff company specializing in real-time thermal, visual, and audio AI inspection systems for welding processes. Our mission is to ensure 100% weld verification with zero guesswork, revolutionizing quality control in manufacturing through advanced non-destructive testing (NDT) solutions.
+**Therness** is a Politecnico di Torino spinoff building AI-powered thermal monitoring for weld quality assurance in industrial manufacturing. The platform combines real-time thermography, visual inspection and machine-learning models trained on production environments to eliminate weld defects and produce audit-ready evidence packages.
 
-### 🚀 Company Overview
+**Website:** [therness.com](https://www.therness.com)
 
-Therness leverages cutting-edge thermography and AI technologies to monitor welding processes and assess the mechanical and thermal properties of materials and components. Originating from the **Thexor research group** at Politecnico di Torino, which boasts over 30 years of expertise in thermography and NDT, Therness brings a wealth of knowledge and experience to the field.
+### 🎯 Highlights
 
-**Visit our official website:** [therness.com](https://www.therness.com)
-
-![Therness Logo](https://commons.wikimedia.org/wiki/File%3ALogo_Therness_SRL.png) *Therness company logo*
-
-### 🎯 Key Achievements
-
-- **Tech4Planet Investment**: Selected for Tech4Planet's Pre-seed investment program
-- **Proven Results**: European heavy manufacturing company achieved €1.2M annual savings and 85% reduction in scrap
-- **Market Impact**: Operating in the €18.4 billion global NDT market
-- **100% Verification**: Automated thermographic system ensures complete observation of welding operations
+- **Spinoff origin:** Politecnico di Torino — DIMEAS, born from the Thexor research group's work on thermography and NDT.
+- **Investment:** Selected for the Tech4Planet Pre-seed investment program (CDP Venture Capital SGR).
+- **Compliance:** Audit-ready outputs aligned with ISO 17635 and ISO 3834.
+- **Deployment model:** map & baseline → pilot & validate → roll out & train.
 
 ### 🔧 Product Portfolio
 
-Therness offers a comprehensive range of monitoring solutions:
+**Software**
 
-- **Entry-level thermal systems** for basic welding monitoring
-- **Advanced multi-modal platforms** combining thermal, visual, and audio inspection
-- **HeatCore™ thermal camera system** for precision temperature monitoring
-- **SugarCube Cam™** for compact, high-performance inspection
-- **Real-time AI analysis** for instant anomaly detection
+- [**HeatCore Basic**](https://www.therness.com/products/therness-heatcore-basic) — operator-grade thermal monitoring with live weld-pool view, temperature analytics and ISO 17635 evidence.
+- [**HeatCore AI**](https://www.therness.com/products/therness-heatcore-ai) — inline anomaly detection and Kaizen reporting on top of HeatCore.
+- [**HeatCore Robotic**](https://www.therness.com/products/therness-heatcore-robotic) — turnkey thermal-AI configuration for robotic welding cells.
 
-[Explore our products →](https://www.therness.com/products.html)
+**Hardware — thermal cameras**
 
-![HeatCore™ System](https://www.therness.com/products.html) *HeatCore™ thermal camera system for precision monitoring*
+- [**HeatCam IR-C**](https://www.therness.com/products/heatcam-ir-c) — industrial reference sensor, QVGA LWIR, up to 2000 °C, PoE / GigE Vision.
+- [**HeatCam IR-S**](https://www.therness.com/products/heatcam-ir-s) — compact variant for tight or embedded installs.
 
-![SugarCube Cam™](https://www.therness.com/products.html) *SugarCube Cam™ for compact, high-performance inspection*
+**Hardware — visual camera**
+
+- [**PoolVision**](https://www.therness.com/products/therness-poolvision) — 480 fps high-definition visual camera with integrated laser-safe illumination.
+
+**Specialised systems**
+
+- **HeatScan** — purpose-built real-time thermal monitoring and anomaly detection for induction pipe welding.
+
+**Free tools**
+
+- **AI NDT Agent** — generates ISO 9712 / ASNT Level III compliant NDT procedures (UT, RT, MT, PT, VT) on demand.
+
+### 🛠️ Services
+
+- Industrial thermography
+- PV thermography by drone
+- Electrical panels thermography
+- Welding process consulting
+- Quality AI agents & QMS integration
+- IEC 60079 compliance support
 
 ### 🏭 Industry Applications
 
-Our solutions are designed for:
-- **Heavy Manufacturing**: Automotive, aerospace, and construction industries
-- **Quality Control**: Real-time weld verification and defect detection
-- **Process Optimization**: Enhanced efficiency and reduced waste
-- **Safety Enhancement**: Improved workplace safety through automated monitoring
-
-### 📊 Success Stories
-
-**European Heavy Manufacturing Case Study:**
-- **€1.2M annual savings** achieved through improved process efficiency
-- **85% reduction in scrap** through early defect detection
-- **100% weld verification** ensuring zero quality issues
-
-[Read more case studies →](https://www.therness.com/case-studies.html)
+- **Heavy manufacturing** — automotive, aerospace, oil & gas, construction.
+- **Quality control** — real-time weld verification and defect detection.
+- **Process optimisation** — root-cause timelines linked to process parameters.
+- **Compliance** — ISO 17635 / ISO 3834 audit-ready evidence with secure data retention.
 
 ### 🔬 Research Foundation
 
-Therness is backed by **Tech4Planet**, Italy's National Technology Transfer Hub for environmental sustainability, initiated by CDP Venture Capital SGR. The initiative brings together top institutions:
-
-- **Politecnico di Milano**
-- **Politecnico di Torino** 
-- **Politecnico di Bari**
-
-**Key Partners:**
-- PoliHub, I3P, and BINP (Technical Partners)
-- Fondazione Politecnico di Milano, a2a, Gruppo Iren, NEVA SGR (Co-investors)
-- Joule (Eni's business school) and Snam (Corporate Partners)
-
-### 📚 Related Research
-
-This spinoff builds upon extensive research conducted at Politecnico di Torino:
-
-**Research Areas:**
-- Active Thermography for NDT Applications
-- Machine Learning in Welding Process Monitoring  
-- Computer Vision for Industrial Inspection
-- Real-time Quality Control Systems
+Therness builds on research carried out at Politecnico di Torino (DIMEAS) on active thermography, machine learning for NDT, computer vision for industrial inspection and real-time quality control. The spinoff is supported by **Tech4Planet**, Italy's National Technology Transfer Hub for environmental sustainability, initiated by CDP Venture Capital SGR and bringing together Politecnico di Milano, Politecnico di Torino and Politecnico di Bari with partners including PoliHub, I3P, BINP, Fondazione Politecnico di Milano, a2a, Gruppo Iren, NEVA SGR, Joule (Eni's business school) and Snam.
 
 ### 🔗 Project Details
 
-- **Duration:** April 22, 2024 - April 21, 2036
+- **Spinoff approval:** April 22, 2024
 - **Scientific Coordinator:** Prof. Raffaella Sesana
-- **Project Type:** Non-commercial Collaborative Agreements
-- **Involved Structures:** DIMEAS - Department of Mechanical and Aerospace Engineering
+- **Involved Structures:** DIMEAS — Department of Mechanical and Aerospace Engineering
 - **Partner:** Tech4Planet S.r.l.
 
 ### 📖 Resources
 
-**Core Solutions:**
-- **[QMS Copilot™](https://www.therness.com/therness-qms-copilot)** - ISO 9001-aligned, AI-powered Quality Management System
-- **[Complete Product Portfolio](https://www.therness.com/products)** - HeatCore™, VisiCore™, SugarCube Cam™, and more
-
-**Additional Resources:**
-- [Official Therness Website](https://www.therness.com)
-- [Technical White Papers](https://www.therness.com/resources.html)
-- [Case Studies](https://www.therness.com/case-studies.html)
-- [LinkedIn Announcement](https://www.linkedin.com/posts/tech4planet-polo-nazionale-di-trasferimento-tecnologico-per-la-sostenibilit%C3%A0-ambientale_presentiamo-therness-il-team-selezionato-activity-7213906634337624064-qwhW/?originalSubdomain=it)
-- [Project Reference](https://www.polito.it/ricerca/una-ricerca-integrata/anagrafe-della-ricerca?progetto=459/2024)
+- [Official website](https://www.therness.com)
+- [Products](https://www.therness.com/products/)
+- [About / company](https://www.therness.com/about/)
+- [Tech4Planet announcement](https://www.linkedin.com/posts/tech4planet-polo-nazionale-di-trasferimento-tecnologico-per-la-sostenibilit%C3%A0-ambientale_presentiamo-therness-il-team-selezionato-activity-7213906634337624064-qwhW/)
+- [Politecnico di Torino — research registry](https://www.polito.it/ricerca/una-ricerca-integrata/anagrafe-della-ricerca?progetto=459/2024)
 
 ---
 
-*Therness represents the successful translation of academic research into industrial innovation, demonstrating the power of university-industry collaboration in advancing manufacturing technologies.*
+*Therness represents the translation of academic research on thermography and NDT into industrial practice, demonstrating the impact of university–industry collaboration on manufacturing quality.*

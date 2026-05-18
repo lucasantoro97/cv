@@ -36,13 +36,13 @@ sections:
       title: '📚 My Research'
       subtitle: ''
       text: |-
-        I'm a research scientist specializing in Non Destructive Testing and Machine Design. I currently work as a  Scientist at the Politechnic University of Turin. I frequently explore topics like fracture mechanics, computer vision, and the application of advanced testing methods in engineering.
+        I am a Fixed-term Assistant Professor at the [Politecnico di Torino](https://www.polito.it/) (DIMEAS), working on non-destructive testing, active thermography and welding process monitoring. My research blends fracture mechanics, computer vision and machine learning to bring advanced inspection methods into industrial practice.
 
-        I employ both qualitative and quantitative approaches to deeply analyze the intersection of science, engineering, and technology in industry applications.
+        I use both qualitative and quantitative approaches to study the intersection of science, engineering and technology in real manufacturing environments.
 
-        **🚀 Spinoff Success:** My research has led to the creation of **[Therness](/project/therness/)**, a cutting-edge company specializing in AI-powered welding inspection systems that ensure 100% weld verification with zero guesswork.
+        **🚀 From research to industry —** my work has led to the creation of **[Therness](/project/therness/)**, a Politecnico di Torino spinoff delivering AI-powered thermal monitoring for weld quality assurance.
 
-        Feel free to connect for collaboration opportunities 😃
+        Feel free to connect for collaboration opportunities.
     design:
       columns: '1'
   - block: collection
@@ -78,25 +78,27 @@ sections:
       columns: 1
   - block: markdown
     content:
-      title: '🚀 Spinoff Success: Therness'
-      subtitle: 'From Research to Industry Innovation'
+      title: '🚀 Therness — Research to Industry'
+      subtitle: 'AI-Powered Weld Quality Assurance'
       text: |-
-        My research in active thermography and non-destructive testing has led to the successful creation of **Therness**, a cutting-edge spinoff company that revolutionizes welding quality control through AI-powered inspection systems.
+        My research on active thermography and non-destructive testing has been translated into **[Therness](https://www.therness.com/)**, a Politecnico di Torino spinoff delivering real-time thermal monitoring and AI-driven defect detection for welding.
 
-        **Key Achievements:**
-        - **€1.2M annual savings** achieved by European manufacturing clients
-        - **85% reduction in scrap** through early defect detection  
-        - **100% weld verification** with zero guesswork
-        - **Tech4Planet investment** for scaling operations
+        **Current product portfolio**
 
-        Therness represents the successful translation of academic research into industrial innovation, demonstrating the power of university-industry collaboration in advancing manufacturing technologies.
+        - **HeatCore** software suite — Basic, AI and Robotic tiers for live weld-pool view, inline anomaly detection and turnkey robotic cells.
+        - **HeatCam IR-C / IR-S** — industrial and compact thermal cameras (up to 2000 °C, PoE / GigE Vision).
+        - **PoolVision** — 480 fps visual camera with laser-safe illumination.
+        - **HeatScan** — induction pipe welding monitoring.
+        - **AI NDT Agent** — free tool generating ISO 9712 / ASNT Level III compliant NDT procedures.
 
-        **[Learn more about Therness →](/project/therness/)** | **[QMS Copilot™ →](https://www.therness.com/therness-qms-copilot)** | **[Products →](https://www.therness.com/products)**
+        Selected for the **Tech4Planet Pre-seed investment program** (CDP Venture Capital).
+
+        **[Learn more →](/project/therness/)** &nbsp;|&nbsp; **[Products →](https://www.therness.com/products/)** &nbsp;|&nbsp; **[About →](https://www.therness.com/about/)**
     design:
       css_class: dark
       background:
-        color: primary  
-      
+        color: primary
+
   # - block: collection
   #   id: news
   #   content:
