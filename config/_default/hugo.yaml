@@ -6,7 +6,7 @@
 # Website name
 title: Luca Santoro
 # Website URL
-baseURL: 'https://lucasantoro97.github.io/'
+baseURL: 'https://lucasantoro97.github.io/cv/'
 
 ############################
 ## LANGUAGE
@@ -25,7 +25,8 @@ build:
   writeStats: true
 enableGitInfo: false
 summaryLength: 30
-paginate: 10
+pagination:
+  pagerSize: 10
 enableEmoji: true
 enableRobotsTXT: true
 footnotereturnlinkcontents: <sup>^</sup>

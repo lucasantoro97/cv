@@ -1,7 +1,8 @@
 ---
 # Leave the homepage title empty to use the site title
 title: ""
-date: 2022-10-24
+date: 2026-07-27
+lastmod: 2026-07-27
 type: landing
 
 design:
@@ -40,7 +41,7 @@ sections:
 
         I use both qualitative and quantitative approaches to study the intersection of science, engineering and technology in real manufacturing environments.
 
-        **🚀 From research to industry —** my work has led to the creation of **[Therness](/project/therness/)**, a Politecnico di Torino spinoff delivering AI-powered thermal monitoring for weld quality assurance.
+        **🚀 From research to industry —** my work has led to the creation of **[Therness](/cv/project/therness/)**, a Politecnico di Torino spinoff delivering AI-powered thermal monitoring for weld quality assurance.
 
         Feel free to connect for collaboration opportunities.
     design:
@@ -93,7 +94,7 @@ sections:
 
         Selected for the **Tech4Planet Pre-seed investment program** (CDP Venture Capital).
 
-        **[Learn more →](/project/therness/)** &nbsp;|&nbsp; **[Products →](https://www.therness.com/products/)** &nbsp;|&nbsp; **[About →](https://www.therness.com/about/)**
+        **[Learn more →](/cv/project/therness/)** &nbsp;|&nbsp; **[Products →](https://www.therness.com/products/)** &nbsp;|&nbsp; **[About →](https://www.therness.com/about/)**
     design:
       css_class: dark
       background:

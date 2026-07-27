@@ -27,7 +27,7 @@ publishDate: '2022-09-01T00:00:00Z'
 authors:
   - admin
 
-tags: ["Weldings","Conference"]
+tags: ["Welding", "Conference"]
 
 # Is this a featured talk? (true/false)
 featured: false

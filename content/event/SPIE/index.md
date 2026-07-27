@@ -58,10 +58,10 @@ A special thanks to my co-authors and the SPIE community for the enriching exper
 
 ### 🚀 Commercial Application
 
-This research has been successfully commercialized through **[Therness](/project/therness/)**, offering:
+This research contributed to **[Therness](/cv/project/therness/)**, a Politecnico di Torino spinoff translating thermographic monitoring research into industrial weld-quality tools, including:
 
-- **[QMS Copilot™](https://www.therness.com/therness-qms-copilot)** - AI-powered Quality Management System for ISO 9001 compliance with automated CAPA/PPAP workflows
-- **[HeatCore™ Systems](https://www.therness.com/products)** - Advanced thermal monitoring solutions implementing the frequency-based evaluation methods presented
+- **[HeatCore](https://www.therness.com/products/)** — software for live weld-pool visualization and AI-assisted anomaly detection.
+- **HeatCam IR-C / IR-S** — industrial thermal cameras for welding-process monitoring.
 
 Feel free to connect if you're interested in these topics or are working on similar research!
 

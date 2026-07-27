@@ -260,7 +260,7 @@ I am a Fixed-term Assistant Professor at the Politecnico di Torino, Department o
 
 ### 🚀 Commercial Impact
 
-My research has been translated into **[Therness](/project/therness/)**, a spinoff that builds AI-powered thermal monitoring for weld quality assurance. The current portfolio includes:
+My research has been translated into **[Therness](/cv/project/therness/)**, a spinoff that builds AI-powered thermal monitoring for weld quality assurance. The current portfolio includes:
 
 - **HeatCore software suite** — [Basic](https://www.therness.com/products/therness-heatcore-basic), [AI](https://www.therness.com/products/therness-heatcore-ai) and [Robotic](https://www.therness.com/products/therness-heatcore-robotic) tiers for live weld-pool view, inline anomaly detection and turnkey robotic cells.
 - **HeatCam thermal cameras** — [IR-C](https://www.therness.com/products/heatcam-ir-c) industrial reference sensor (up to 2000 °C, PoE/GigE Vision) and [IR-S](https://www.therness.com/products/heatcam-ir-s) compact variant for tight or embedded installs.
