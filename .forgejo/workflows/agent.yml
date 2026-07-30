@@ -17,6 +17,7 @@ jobs:
           ACTOR: ${{ github.actor }}
           EVENT_LABEL: ${{ github.event.label.name }}
           ALLOWLIST: ${{ vars.AGENT_ALLOWLIST }}
+          AGENT_REQUIRE_HUMAN: ${{ vars.AGENT_REQUIRE_HUMAN }}
           REQUIRE_OFFICE: "false"
           API_URL: ${{ github.api_url }}
           REPOSITORY: ${{ github.repository }}
@@ -69,9 +70,30 @@ jobs:
           except Exception as exc:                       # timeline unavailable -> fall back
               print(f'timeline lookup failed ({exc}); falling back to event label')
               authorisers = {actor} if os.environ.get('EVENT_LABEL') == 'ai:run' else set()
+          # AUTORIZZAZIONE (decisione del committente, 2026-07-30): l'avvio puo' essere
+          # automatico. Un cancello che pretende un gesto umano su ogni ticket non e'
+          # automazione, e il rischio che proteggeva - "il testo di una mail diventa istruzioni
+          # per l'agente" - e' gia' contenuto a monte: l'intake accetta solo mittenti mappati e
+          # autenticati (DMARC o submission SASL sul nostro MTA), quindi un ticket non puo'
+          # nascere da uno sconosciuto.
+          #
+          # Il cancello NON sparisce, si sposta dove serve davvero: l'agente apre una PR e non
+          # la fonde. Il controllo umano passa dall'avvio alla FUSIONE, che e' il punto in cui
+          # una modifica entra davvero in produzione.
+          #
+          # Restano richiesti: attore in allowlist (il bot dispatcher lo e'), e una provenienza
+          # dichiarata. AGENT_REQUIRE_HUMAN=1 riporta il comportamento precedente senza toccare
+          # il codice: e' l'interruttore da usare se un giorno serve richiudere.
+          require_human = os.environ.get('AGENT_REQUIRE_HUMAN', '0') == '1'
           human = sorted(authorisers & set(actors))
-          if not human: deny(f'ai:run never applied by an allowlisted human (seen: {sorted(authorisers)!r})')
-          print(f'authorised by {human[0]}')
+          if human:
+              print(f'authorised by {human[0]}')
+          elif require_human:
+              deny(f'ai:run never applied by an allowlisted human (seen: {sorted(authorisers)!r})')
+          elif authorisers:
+              print(f'auto-dispatch: ai:run applied by {sorted(authorisers)!r} (human gate open)')
+          else:
+              deny('ai:run present but nobody is recorded as having applied it')
           if 'ai:run' not in labels: deny('ai:run label absent')
           # A ticket carrying route:<other-repo> belongs to the routing controller, not to
           # this repository's agent. Refusing here (before the claim) leaves ai:run intact
@@ -187,6 +209,50 @@ jobs:
             409) echo "PR already open for $branch (branch updated by the push)";;
             *) echo "PR creation failed: HTTP $pr_code"; cat /tmp/pr.json; exit 1;;
           esac
+      - name: independent review then merge
+        if: ${{ steps.gate.outputs.proceed == 'true' }}
+        env:
+          GIT_TOKEN: ${{ secrets.GIT_TOKEN }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          REVIEW_MODEL: ${{ vars.REVIEW_MODEL }}
+        run: |
+          set +e
+          cd work
+          base="origin/${{ github.event.repository.default_branch }}"
+          # Il revisore vede SOLO il diff, con un modello diverso da chi ha implementato e un
+          # contesto nuovo: e' cio' che rende la revisione indipendente invece che
+          # un'auto-approvazione. Non legge il ragionamento dell'implementatore, quindi non puo'
+          # essere convinto da una spiegazione che non ha verificato.
+          python3 "$RUNNER_TEMP/lib/review_gate.py" --repo . --base "$base" --head HEAD \
+            --model "${REVIEW_MODEL:-fable}" | tee /tmp/review.txt
+          verdict=${PIPESTATUS[0]}
+          set -e
+          branch="ai/${{ github.event.issue.number }}"
+          number=$(curl -sS -H "Authorization: token $GIT_TOKEN" \
+            "$GITHUB_API_URL/repos/${{ github.repository }}/pulls?state=open&limit=50" \
+            | python3 -c "import json,sys;b='$branch';print(next((p['number'] for p in json.load(sys.stdin) if p.get('head',{}).get('ref')==b),''))")
+          [ -n "$number" ] || { echo 'nessuna PR aperta per questo ramo'; exit 0; }
+          note=$(python3 -c "import json,sys;print(json.dumps(open('/tmp/review.txt').read()[-3000:]))")
+          curl -sS -o /dev/null -X POST -H "Authorization: token $GIT_TOKEN" \
+            -H 'Content-Type: application/json' \
+            "$GITHUB_API_URL/repos/${{ github.repository }}/issues/$number/comments" \
+            -d "{\"body\": $note}"
+          if [ "$verdict" -eq 0 ]; then
+            code=$(curl -sS -o /tmp/merge.json -w '%{http_code}' -X POST \
+              -H "Authorization: token $GIT_TOKEN" -H 'Content-Type: application/json' \
+              "$GITHUB_API_URL/repos/${{ github.repository }}/pulls/$number/merge" \
+              -d '{"Do":"squash","MergeTitleField":"agent #${{ github.event.issue.number }} (revisione indipendente)"}')
+            case "$code" in 200|204) echo "PR #$number fusa dopo revisione indipendente";;
+              *) echo "fusione rifiutata dal server: HTTP $code"; cat /tmp/merge.json;; esac
+          else
+            # Un cancello che fallisce NON approva: 2 = serve una persona, 4 = respinta,
+            # qualunque altro codice = il revisore non ha risposto e quindi nessuno ha guardato.
+            echo "nessuna fusione automatica (codice $verdict): la PR resta aperta"
+            curl -sS -o /dev/null -X PATCH -H "Authorization: token $GIT_TOKEN" \
+              -H 'Content-Type: application/json' \
+              "$GITHUB_API_URL/repos/${{ github.repository }}/issues/$number/labels" \
+              -d '{"labels":["needs-human"]}' || true
+          fi
       - name: atomic terminal label and redacted status comment
         if: ${{ always() && steps.gate.outputs.proceed == 'true' }}
         env:
