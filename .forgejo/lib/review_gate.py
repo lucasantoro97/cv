@@ -29,6 +29,7 @@ import sys
 # Anything matching these is a boundary change: the reviewer may comment, never merge.
 PROTECTED = (
     re.compile(r"forgejo-runner/workflows/"),          # the gate itself, including this file
+    re.compile(r"(^|/)\.forgejo/"),
     re.compile(r"(^|/)(imap_bridge|notifier|common)\.py$"),   # who may create and be told things
     re.compile(r"safety/"),                            # NAS boundaries, doveadm, mail identity
     re.compile(r"(^|/)corpus\.py$"),                   # access_scope lives here

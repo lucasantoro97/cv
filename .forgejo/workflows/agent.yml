@@ -6,7 +6,8 @@ jobs:
   agent:
     if: ${{ !endsWith(github.actor, '[bot]') && github.event.issue.number != '' }}
     runs-on: claude
-    timeout-minutes: 20
+    # 30 e non 20: la catena sonnet -> codex -> fable puo' richiedere tre passaggi.
+    timeout-minutes: 30
     concurrency:
       group: agent-issue-${{ github.event.issue.number }}
       cancel-in-progress: false
@@ -172,14 +173,46 @@ jobs:
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           AGENT_MODEL: ${{ vars.AGENT_MODEL }}
+          CODEX_AUTH_B64: ${{ secrets.CODEX_AUTH_JSON }}
+          CODEX_FALLBACK_MODEL: ${{ vars.CODEX_FALLBACK_MODEL }}
         run: |
           set -euo pipefail
           cd work
           # Model is pinned rather than left to the CLI default, so a ticket answered today
           # and the same ticket answered next month are produced by the same model.
+          set +e
           claude -p "$(cat .issue-prompt.txt)" --model "${AGENT_MODEL:-sonnet}" \
             --fallback-model opus --max-turns 30 \
             --allowedTools 'Read,Edit,Write,Glob,Grep' 2>&1 | tail -40
+          claude_rc=${PIPESTATUS[0]}
+          set -e
+          # Secondo motore (decisione committente 2026-07-31): se Claude fallisce O non produce
+          # alcuna modifica, la stessa consegna passa a Codex nello STESSO contenitore usa-e-getta.
+          # Due CLI agentiche indipendenti = niente punto singolo di guasto sul modello.
+          # Sandbox workspace-write, MAI danger-full-access: il prompt contiene testo del ticket
+          # (recintato ma ostile per ipotesi) e l'ambiente del passo contiene credenziali — un
+          # comando iniettato con rete e shell libere potrebbe leggerle ed esfiltrarle. Con
+          # workspace-write i comandi generati non hanno rete e scrivono solo nel workspace,
+          # parita' con l'allowlist Claude; il traffico modello di Codex non passa dal sandbox.
+          if { [ "$claude_rc" -ne 0 ] || [ -z "$(git status --porcelain)" ]; } && [ -n "${CODEX_AUTH_B64:-}" ]; then
+            echo "fallback codex: claude_rc=$claude_rc, modifiche=$(git status --porcelain | wc -l)"
+            export CODEX_HOME="$RUNNER_TEMP/codex-home"
+            mkdir -p "$CODEX_HOME"; chmod 700 "$CODEX_HOME"
+            printf '%s' "$CODEX_AUTH_B64" | base64 -d > "$CODEX_HOME/auth.json"; chmod 600 "$CODEX_HOME/auth.json"
+            trap 'rm -f "$CODEX_HOME/auth.json"' EXIT
+            env -u CLAUDE_CODE_OAUTH_TOKEN -u CODEX_AUTH_B64 CODEX_HOME="$CODEX_HOME" \
+              codex exec --sandbox workspace-write -C . \
+              -m "${CODEX_FALLBACK_MODEL:-gpt-5.6-terra}" \
+              "$(cat .issue-prompt.txt)" 2>&1 | tail -40 || true
+          fi
+          # Ultimo gradino (decisione committente 2026-07-31): i ticket complessi meritano
+          # Fable. Solo quando ENTRAMBI i motori economici non hanno prodotto un diff —
+          # cosi' il modello caro lavora esclusivamente dove serve davvero.
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "escalation fable: nessuna modifica dopo sonnet e codex"
+            claude -p "$(cat .issue-prompt.txt)" --model fable --max-turns 40 \
+              --allowedTools 'Read,Edit,Write,Glob,Grep' 2>&1 | tail -40 || true
+          fi
       - name: egress gate then trusted publish
         if: ${{ steps.gate.outputs.proceed == 'true' }}
         env:
@@ -248,10 +281,70 @@ jobs:
             # Un cancello che fallisce NON approva: 2 = serve una persona, 4 = respinta,
             # qualunque altro codice = il revisore non ha risposto e quindi nessuno ha guardato.
             echo "nessuna fusione automatica (codice $verdict): la PR resta aperta"
-            curl -sS -o /dev/null -X PATCH -H "Authorization: token $GIT_TOKEN" \
-              -H 'Content-Type: application/json' \
-              "$GITHUB_API_URL/repos/${{ github.repository }}/issues/$number/labels" \
-              -d '{"labels":["needs-human"]}' || true
+            # L'API etichette vuole ID numerici: il payload per nome falliva in silenzio e le
+            # PR bloccate restavano senza marcatore visibile (= ticket invisibilmente fermo).
+            NUMBER="$number" VERDICT_RC="$verdict" ORIGIN_ISSUE="${{ github.event.issue.number }}" python3 - <<'PY' || true
+          import json, os, urllib.request
+          root = os.environ['GITHUB_API_URL']; repo = os.environ['GITHUB_REPOSITORY']
+          token = os.environ['GIT_TOKEN']; number = os.environ['NUMBER']
+          def req(method, path, payload=None):
+              r = urllib.request.Request(root + path, method=method,
+                    data=None if payload is None else json.dumps(payload).encode())
+              r.add_header('Authorization', 'token ' + token)
+              r.add_header('Content-Type', 'application/json')
+              with urllib.request.urlopen(r, timeout=15) as resp:
+                  body = resp.read()
+                  return json.loads(body) if body else None
+          labels = req('GET', f"/repos/{repo}/labels?limit=100") or []
+          table = {row['name']: row['id'] for row in labels}
+          if 'needs-human' not in table:
+              made = req('POST', f"/repos/{repo}/labels",
+                         {'name': 'needs-human', 'color': '#e99695',
+                          'description': 'PR bloccata dal revisore: serve una persona'})
+              table['needs-human'] = made['id']
+          req('POST', f"/repos/{repo}/issues/{number}/labels", {'labels': [table['needs-human']]})
+          print('needs-human applicata alla PR ' + number)
+          # FULL-AUTO (decisione del committente 2026-07-31): una respinta del revisore non
+          # aspetta una persona — diventa un ticket di follow-up che la pipeline lavora da
+          # sola. Tre confini restano duri:
+          #   rc=2 (confine di fiducia protetto): NESSUN retry automatico — un nuovo tentativo
+          #        non cambia il fatto che il percorso richiede una persona;
+          #   profondita' massima 2: una catena che non converge si ferma con needs-human,
+          #        non gira all'infinito bruciando run;
+          #   il testo della revisione entra nel ticket dentro i delimitatori DATI_NON_FIDATI,
+          #        come ogni altro input non fidato.
+          rc = os.environ.get('VERDICT_RC', '')
+          origin = os.environ.get('ORIGIN_ISSUE', '')
+          if rc == '4' and origin:
+              import re
+              depth = 0
+              try:
+                  ob = (req('GET', f"/repos/{repo}/issues/{origin}") or {}).get('body') or ''
+                  m = re.search(r'catena retry depth=(\d+)', ob)
+                  depth = int(m.group(1)) if m else 0
+              except Exception as exc:
+                  print(f'lettura profondita fallita ({exc}); assumo 0')
+              if depth >= 2:
+                  print(f'catena retry esaurita (depth={depth}): resta needs-human')
+              else:
+                  review = ''
+                  try:
+                      review = open('/tmp/review.txt').read()[-4000:]
+                  except OSError:
+                      review = '(testo revisione non disponibile)'
+                  body = ("La PR della issue #%s e' stata respinta dalla revisione indipendente. "
+                          "Correggere i punti elencati e riproporre.\n\n"
+                          "DATI_NON_FIDATI_INIZIO\n%s\nDATI_NON_FIDATI_FINE\n\n"
+                          "Follow-up automatico della revisione; catena retry depth=%d."
+                          % (origin, review, depth + 1))
+                  if 'ai:run' not in table:
+                      print('ai:run non provisionata nel repo: follow-up impossibile, resta needs-human')
+                  else:
+                      made = req('POST', f"/repos/{repo}/issues",
+                                 {'title': f"Follow-up respinta PR (issue #{origin}, retry {depth+1})",
+                                  'body': body, 'labels': [table['ai:run']]})
+                      print('follow-up automatico: issue #%s' % made.get('number'))
+          PY
           fi
       - name: atomic terminal label and redacted status comment
         if: ${{ always() && steps.gate.outputs.proceed == 'true' }}
