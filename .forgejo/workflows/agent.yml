@@ -109,7 +109,20 @@ jobs:
           claim=urllib.request.Request(f"{root}/repos/{repo}/issues/{issue}/labels",
                 data=json.dumps({'labels':replacement}).encode(), method='PUT')
           claim.add_header('Authorization','token '+token); claim.add_header('Content-Type','application/json')
-          with urllib.request.urlopen(claim, timeout=15): pass
+          # Verificare che la rivendicazione abbia ATTACCATO, non che la chiamata sia riuscita.
+          # Forgejo scarta in silenzio i nomi di etichetta che nel repo non esistono e risponde
+          # comunque 200: se `ai:running` non e' provisionata, il ticket resta con `ai:run`, la
+          # guardia "already running" qui sopra non puo' scattare e OGNI evento successivo
+          # ridispaccia lo stesso ticket. Misurato il 2026-08-02: 68 repo su 81 senza le
+          # etichette terminali, e meeting-ingest#3 aveva prodotto 57 job, sei nello stesso
+          # minuto. Una rivendicazione che non si verifica non e' una rivendicazione.
+          with urllib.request.urlopen(claim, timeout=15) as resp:
+              body=resp.read()
+          ora={row['name'] for row in (json.loads(body) if body else [])}
+          if 'ai:running' not in ora:
+              deny('rivendicazione non attaccata: ai:running assente dopo la PUT '
+                   f'(etichette risultanti: {sorted(ora)!r}). Provisionare le etichette di '
+                   'controllo con forgejo/scripts/provision-route-labels.sh')
           with open(os.environ['GITHUB_OUTPUT'],'a') as fh: fh.write('proceed=true\n')
           print('gate passed')
           PY
