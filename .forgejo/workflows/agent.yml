@@ -228,6 +228,14 @@ jobs:
           cd work
           # Codex is primary. Claude is a compatibility fallback only when Codex is unavailable
           # or produces no work; both run inside the same disposable, network-fenced checkout.
+          before=$(mktemp "$RUNNER_TEMP/implementer-before.XXXXXX")
+          after="$RUNNER_TEMP/implementer-after"
+          git -c core.hooksPath=/dev/null status --porcelain=v1 -z > "$before"
+          changed() {
+            git -c core.hooksPath=/dev/null status --porcelain=v1 -z > "$after"
+            ! cmp -s "$before" "$after"
+          }
+          primary_model="${CODEX_PRIMARY_MODEL:-gpt-5.6-sol}"
           codex_rc=1
           if [ -n "${CODEX_AUTH_B64:-}" ]; then
             export CODEX_HOME="$RUNNER_TEMP/codex-home"
@@ -237,16 +245,25 @@ jobs:
             set +e
             env -u CLAUDE_CODE_OAUTH_TOKEN -u CODEX_AUTH_B64 CODEX_HOME="$CODEX_HOME" \
               codex exec --sandbox workspace-write -C . \
-              -m "${CODEX_PRIMARY_MODEL:-gpt-5.6-sol}" \
+              -m "$primary_model" \
               "$(cat .issue-prompt.txt)" 2>&1 | tail -40
             codex_rc=${PIPESTATUS[0]}
             set -e
+            if changed; then
+              printf '%s\n' "$primary_model" > "$RUNNER_TEMP/implementer-class"
+              exit 0
+            fi
           fi
-          if ! -f .agent-question.md && [ -z "$(git -c core.hooksPath=/dev/null status --porcelain)" ]; then
-            echo "fallback claude: codex_rc=$codex_rc, nessuna modifica"
-            claude -p "$(cat .issue-prompt.txt)" --model "${AGENT_MODEL:-sonnet}" \
-              --fallback-model opus --max-turns 30 \
-              --allowedTools 'Read,Edit,Write,Glob,Grep' 2>&1 | tail -40 || true
+          echo "fallback claude: codex_rc=$codex_rc, nessuna modifica"
+          if ! -f .agent-question.md; then
+            for implementer in "${AGENT_MODEL:-sonnet}" opus; do
+              claude -p "$(cat .issue-prompt.txt)" --model "$implementer" --max-turns 30 \
+                --allowedTools 'Read,Edit,Write,Glob,Grep' 2>&1 | tail -40 || true
+              if changed; then
+                printf '%s\n' "$implementer" > "$RUNNER_TEMP/implementer-class"
+                exit 0
+              fi
+            done
           fi
       - name: disposable PIANO planner
         id: plan
@@ -334,16 +351,17 @@ jobs:
           git -c core.hooksPath=/dev/null -C work status --porcelain=v1 -z > "$before"
           run_codex() {
             [ -n "${CODEX_AUTH_B64:-}" ] || return 1
+            primary_model="${CODEX_PRIMARY_MODEL:-gpt-5.6-sol}"
             export CODEX_HOME="$RUNNER_TEMP/codex-home"
             mkdir -p "$CODEX_HOME"; chmod 700 "$CODEX_HOME"
             printf '%s' "$CODEX_AUTH_B64" | base64 -d > "$CODEX_HOME/auth.json"; chmod 600 "$CODEX_HOME/auth.json"
             env -u CLAUDE_CODE_OAUTH_TOKEN -u CODEX_AUTH_B64 CODEX_HOME="$CODEX_HOME" \
-              codex exec --sandbox workspace-write -C work -m "${CODEX_PRIMARY_MODEL:-gpt-5.6-sol}" \
+              codex exec --sandbox workspace-write -C work -m "$primary_model" \
               "$(cat "$RUNNER_TEMP/implementation-prompt.txt")" 2>&1 | tail -40 || true
             rm -f "$CODEX_HOME/auth.json"
           }
-          run_codex
-          if changed; then printf 'codex\n' > "$RUNNER_TEMP/implementer-class"; exit 0; fi
+          run_codex || true
+          if changed; then printf '%s\n' "${CODEX_PRIMARY_MODEL:-gpt-5.6-sol}" > "$RUNNER_TEMP/implementer-class"; exit 0; fi
           for implementer in fable opus sonnet; do
             ( cd work && claude -p "$(cat "$RUNNER_TEMP/implementation-prompt.txt")" --model "$implementer" --max-turns 30 \
               --allowedTools 'Read,Edit,Write,Glob,Grep' ) 2>&1 | tail -40 || true
@@ -413,6 +431,8 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           CODEX_AUTH_B64: ${{ secrets.CODEX_AUTH_JSON }}
           CODEX_REVIEW_MODEL: ${{ vars.CODEX_REVIEW_MODEL }}
+          CODEX_FIX_MODEL: ${{ vars.CODEX_FIX_MODEL }}
+          SECOND_REVIEW_MODEL: ${{ vars.SECOND_REVIEW_MODEL }}
           PLAN_REQUESTED: ${{ steps.gate.outputs.plan }}
         run: |
           set +e
@@ -431,7 +451,23 @@ jobs:
           # essere convinto da una spiegazione che non ha verificato.
           reviewer="${CODEX_REVIEW_MODEL:-gpt-5.6-terra}"
           implementer=$(cat "$RUNNER_TEMP/implementer-class" 2>/dev/null || true)
+          [ -n "$implementer" ] || { echo "safe stop: exact implementer identity unavailable" >&2; exit 2; }
           [ "$reviewer" != "$implementer" ] || { echo "safe stop: reviewer equals implementer" >&2; exit 2; }
+          fix_model="${CODEX_FIX_MODEL:-gpt-5.6-sol}"
+          second_reviewer="${SECOND_REVIEW_MODEL:-}"
+          if [ -z "$second_reviewer" ]; then
+            for candidate in fable opus sonnet; do
+              if [ "$candidate" != "$reviewer" ] && [ "$candidate" != "$implementer" ] \
+                  && [ "$candidate" != "$fix_model" ]; then
+                second_reviewer=$candidate
+                break
+              fi
+            done
+          fi
+          [ -n "$second_reviewer" ] || { echo "safe stop: no independent second reviewer" >&2; exit 2; }
+          [ "$fix_model" != "$reviewer" ] || { echo "safe stop: correction model equals reviewer" >&2; exit 2; }
+          [ "$second_reviewer" != "$reviewer" ] || { echo "safe stop: duplicate reviewers" >&2; exit 2; }
+          case "$second_reviewer" in gpt-*) ;; *) echo "safe stop: second reviewer is not Codex" >&2; exit 2;; esac
           [ -n "${CODEX_AUTH_B64:-}" ] || { echo "safe stop: Codex reviewer auth unavailable" >&2; exit 2; }
           export CODEX_HOME="$RUNNER_TEMP/codex-review-home"
           mkdir -p "$CODEX_HOME"; chmod 700 "$CODEX_HOME"
@@ -443,7 +479,8 @@ jobs:
           for correction in 0 1 2; do
             env -u CLAUDE_CODE_OAUTH_TOKEN -u CODEX_AUTH_B64 CODEX_HOME="$CODEX_HOME" \
               python3 "$RUNNER_TEMP/lib/review_gate.py" --repo . --base "$base" --head HEAD \
-                --model "$reviewer" --allow-protected-auto | tee /tmp/review.txt
+                --model "$reviewer" --second-model "$second_reviewer" \
+                --allow-protected-auto | tee /tmp/review.txt
             verdict=${PIPESTATUS[0]}
             [ "$verdict" -eq 0 ] && break
             [ "$correction" -lt 2 ] || break
@@ -455,10 +492,15 @@ jobs:
             } > "$RUNNER_TEMP/review-fix-prompt.txt"
             before=$(git -c core.hooksPath=/dev/null status --porcelain)
             env -u CLAUDE_CODE_OAUTH_TOKEN -u CODEX_AUTH_B64 CODEX_HOME="$CODEX_HOME" \
-              codex exec --sandbox workspace-write -C . -m "${CODEX_FIX_MODEL:-gpt-5.6-sol}" \
+              codex exec --sandbox workspace-write -C . -m "$fix_model" \
                 "$(cat "$RUNNER_TEMP/review-fix-prompt.txt")" 2>&1 | tail -40 || true
             after=$(git -c core.hooksPath=/dev/null status --porcelain)
             [ "$after" != "$before" ] || { echo "review correction produced no diff"; break; }
+            if [ -e .agent-question.md ]; then
+              echo "review correction requested clarification after question inspection; refusing publish" >&2
+              break
+            fi
+            printf '%s\n' "$fix_model" > "$RUNNER_TEMP/implementer-class"
             git -c core.hooksPath=/dev/null add -A
             git -c core.hooksPath=/dev/null commit -m "agent: apply review correction $((correction + 1))"
             python3 "$RUNNER_TEMP/lib/egress_gate.py" --repo . --base "$base" --head HEAD \

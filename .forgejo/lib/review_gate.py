@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Independent review gate: decide whether an agent PR may merge automatically.
+"""Independent model review gate for automatic agent PR merges.
 
-The committente removed the human from the merge decision and asked for Fable to review "as if it
-were a human". That only means anything if the reviewer is genuinely independent and if some
-changes remain out of its reach. Both are enforced here, not left to the reviewer's judgement:
+The release decision is fully automatic. Independence and protected-path handling are enforced
+here rather than left to either reviewer's judgement:
 
   INDEPENDENCE — the reviewer is a different model from the implementer, gets a fresh context, and
   sees only the DIFF. It never reads the implementer's reasoning, so it cannot be talked into
@@ -91,12 +90,15 @@ def read_verdict(text: str) -> str | None:
 
 def run_reviewer(repo: str, model: str, prompt: str) -> subprocess.CompletedProcess[str]:
     """Run one fresh reviewer. Codex models are read-only; Claude remains compatible."""
+    child_env = dict(os.environ)
+    child_env.pop("CODEX_AUTH_B64", None)
     if model.startswith("gpt-"):
         command = ["codex", "exec", "--sandbox", "read-only", "-C", repo,
                    "-m", model, prompt]
+        child_env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
     else:
         command = ["claude", "-p", prompt, "--model", model, "--max-turns", "1"]
-    return subprocess.run(command, capture_output=True, text=True, timeout=900)
+    return subprocess.run(command, capture_output=True, text=True, timeout=900, env=child_env)
 
 
 def main() -> int:
@@ -105,6 +107,7 @@ def main() -> int:
     parse.add_argument("--base", required=True)
     parse.add_argument("--head", required=True)
     parse.add_argument("--model", default=os.environ.get("REVIEW_MODEL", "fable"))
+    parse.add_argument("--second-model")
     parse.add_argument("--allow-protected-auto", action="store_true")
     parse.add_argument("--max-diff-bytes", type=int, default=200_000)
     args = parse.parse_args()
@@ -115,7 +118,7 @@ def main() -> int:
         return 2
     blocked = protected_hits(paths)
     if blocked and not args.allow_protected_auto:
-        print("REVIEW: confine di fiducia toccato, serve una persona:")
+        print("REVIEW: confine di fiducia toccato; fusione automatica non autorizzata:")
         for path in blocked:
             print(f"  {path}")
         return 2
@@ -125,13 +128,15 @@ def main() -> int:
     if len(diff.encode()) > args.max_diff_bytes:
         # A diff nobody can read in one pass is not reviewable by a model either. Say so instead
         # of approving something that was never actually examined.
-        print(f"REVIEW: diff troppo grande ({len(diff.encode())} byte), serve una persona")
+        print(f"REVIEW: diff troppo grande ({len(diff.encode())} byte); nessuna fusione")
         return 2
 
     models = [args.model]
     if blocked:
-        second = "gpt-5.6-sol" if args.model != "gpt-5.6-sol" else "gpt-5.6-terra"
-        models.append(second)
+        if not args.second_model or args.second_model == args.model:
+            print("REVIEW: secondo revisore indipendente mancante")
+            return 2
+        models.append(args.second_model)
         print("REVIEW: confine di fiducia, servono due approvazioni modello indipendenti")
     for model in models:
         proc = run_reviewer(args.repo, model, PROMPT + diff)
