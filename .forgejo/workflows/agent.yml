@@ -4,7 +4,7 @@ on:
     types: [labeled]
 jobs:
   agent:
-    if: ${{ github.event.issue.number != '' }}
+    if: ${{ github.event.issue.number != '' && github.event.label.name == 'ai:run' }}
     runs-on: claude
     env:
       # Org variable ships dark. Only an explicit `1` permits audit artifact upload.
@@ -220,6 +220,7 @@ jobs:
         if: ${{ steps.gate.outputs.proceed == 'true' && steps.gate.outputs.plan != 'true' }}
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CLAUDE_CODE_OAUTH_POOL_B64: ${{ secrets.CLAUDE_CODE_OAUTH_POOL_B64 }}
           CODEX_AUTH_B64: ${{ secrets.CODEX_AUTH_JSON }}
           AGENT_MODEL: ${{ vars.AGENT_MODEL }}
           CODEX_PRIMARY_MODEL: ${{ vars.CODEX_PRIMARY_MODEL }}
@@ -257,8 +258,19 @@ jobs:
           echo "fallback claude: codex_rc=$codex_rc, nessuna modifica"
           if ! -f .agent-question.md; then
             for implementer in "${AGENT_MODEL:-sonnet}" opus; do
-              claude -p "$(cat .issue-prompt.txt)" --model "$implementer" --max-turns 30 \
-                --allowedTools 'Read,Edit,Write,Glob,Grep' 2>&1 | tail -40 || true
+              set +e
+              python3 "$RUNNER_TEMP/lib/claude_pool.py" -- \
+                claude -p "$(cat .issue-prompt.txt)" --model "$implementer" --max-turns 30 \
+                --allowedTools 'Read,Edit,Write,Glob,Grep' 2>&1 | tail -40
+              claude_rc=${PIPESTATUS[0]}
+              set -e
+              if [ "$claude_rc" -ne 0 ]; then
+                if [ "$claude_rc" -eq 75 ]; then
+                  touch "$RUNNER_TEMP/claude-capacity-exhausted"
+                  echo "recoverable Claude capacity exhaustion" >&2
+                fi
+                exit "$claude_rc"
+              fi
               if changed; then
                 printf '%s\n' "$implementer" > "$RUNNER_TEMP/implementer-class"
                 exit 0
@@ -270,6 +282,7 @@ jobs:
         if: ${{ steps.gate.outputs.proceed == 'true' && steps.gate.outputs.plan == 'true' }}
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CLAUDE_CODE_OAUTH_POOL_B64: ${{ secrets.CLAUDE_CODE_OAUTH_POOL_B64 }}
           CODEX_AUTH_B64: ${{ secrets.CODEX_AUTH_JSON }}
           CODEX_PLANNER_MODEL: ${{ vars.CODEX_PLANNER_MODEL }}
         run: |
@@ -302,11 +315,20 @@ jobs:
                 codex exec --sandbox workspace-write -C "$planner" -m "$planner_model" \
                   "$(cat "$RUNNER_TEMP/piano-prompt.txt")" 2>&1 | tail -40
             else
-              ( cd "$planner" && claude -p "$(cat "$RUNNER_TEMP/piano-prompt.txt")" --model "$planner_model" --max-turns 20 \
+              ( cd "$planner" && python3 "$RUNNER_TEMP/lib/claude_pool.py" -- \
+                claude -p "$(cat "$RUNNER_TEMP/piano-prompt.txt")" --model "$planner_model" --max-turns 20 \
                 --allowedTools 'Read,Edit,Write,Glob,Grep' ) 2>&1 | tail -40
             fi
             planner_rc=${PIPESTATUS[0]}
             set -e
+            if [ "$planner_rc" -ne 0 ]; then
+              if [ "$planner_rc" -eq 75 ]; then
+                touch "$RUNNER_TEMP/claude-capacity-exhausted"
+                echo "recoverable Claude capacity exhaustion" >&2
+              fi
+              rm -rf "$planner"
+              exit "$planner_rc"
+            fi
             output=$(python3 "$RUNNER_TEMP/lib/plan_guard.py" --inspect --worktree "$planner")
             outcome=$(printf '%s\n' "$output" | sed -n 's/^plan=//p')
             case "$outcome" in
@@ -332,6 +354,7 @@ jobs:
           CODEX_AUTH_B64: ${{ secrets.CODEX_AUTH_JSON }}
           CODEX_PRIMARY_MODEL: ${{ vars.CODEX_PRIMARY_MODEL }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CLAUDE_CODE_OAUTH_POOL_B64: ${{ secrets.CLAUDE_CODE_OAUTH_POOL_B64 }}
         run: |
           set -euo pipefail
           test -s "$RUNNER_TEMP/validated-plan.md"
@@ -363,8 +386,19 @@ jobs:
           run_codex || true
           if changed; then printf '%s\n' "${CODEX_PRIMARY_MODEL:-gpt-5.6-sol}" > "$RUNNER_TEMP/implementer-class"; exit 0; fi
           for implementer in fable opus sonnet; do
-            ( cd work && claude -p "$(cat "$RUNNER_TEMP/implementation-prompt.txt")" --model "$implementer" --max-turns 30 \
-              --allowedTools 'Read,Edit,Write,Glob,Grep' ) 2>&1 | tail -40 || true
+            set +e
+            ( cd work && python3 "$RUNNER_TEMP/lib/claude_pool.py" -- \
+              claude -p "$(cat "$RUNNER_TEMP/implementation-prompt.txt")" --model "$implementer" --max-turns 30 \
+              --allowedTools 'Read,Edit,Write,Glob,Grep' ) 2>&1 | tail -40
+            claude_rc=${PIPESTATUS[0]}
+            set -e
+            if [ "$claude_rc" -ne 0 ]; then
+              if [ "$claude_rc" -eq 75 ]; then
+                touch "$RUNNER_TEMP/claude-capacity-exhausted"
+                echo "recoverable Claude capacity exhaustion" >&2
+              fi
+              exit "$claude_rc"
+            fi
             if changed; then printf '%s\n' "$implementer" > "$RUNNER_TEMP/implementer-class"; exit 0; fi
           done
           echo "safe stop: no implementation after valid plan" >&2
@@ -584,7 +618,7 @@ jobs:
           terminal_failed_without_checkout() {
             fallback_status=failed
             if [ "$#" -eq 2 ] && [ "$1" = --status ]; then fallback_status=$2; fi
-            case "$fallback_status" in done|failed|needs-human) ;; *) exit 2;; esac
+            case "$fallback_status" in done|failed|capacity-exhausted|needs-human) ;; *) exit 2;; esac
             TERMINAL_STATUS="$fallback_status" python3 - <<'PY'
           import json, os, urllib.request
           root=os.environ['API_URL']; repo=os.environ['REPOSITORY']; issue=os.environ['ISSUE']
@@ -599,12 +633,12 @@ jobs:
           with urllib.request.urlopen(request(f'/repos/{repo}/issues/{issue}'), timeout=15) as response: current=json.loads(response.read())
           labels=current.get('labels') if isinstance(current, dict) else None
           if not isinstance(labels, list) or any(not isinstance(row, dict) or not isinstance(row.get('name'), str) for row in labels): raise SystemExit('terminal labels invalid')
-          terminal={'ai:run','ai:running','ai:done','ai:failed','ai:question','needs-human'}
-          desired={row['name'] for row in labels} - terminal | ({'needs-human'} if status == 'needs-human' else {'ai:'+status})
+          terminal={'ai:run','ai:running','ai:done','ai:failed','ai:capacity-exhausted','ai:question','needs-human'}
+          desired={row['name'] for row in labels} - terminal | ({'needs-human'} if status == 'needs-human' else {'ai:failed','ai:capacity-exhausted'} if status == 'capacity-exhausted' else {'ai:'+status})
           with urllib.request.urlopen(request(f'/repos/{repo}/issues/{issue}/labels', 'PUT', {'labels':sorted(desired)}), timeout=15) as response: actual=json.loads(response.read())
           actual_names={row['name'] for row in actual} if isinstance(actual, list) and all(isinstance(row, dict) and isinstance(row.get('name'), str) for row in actual) else None
           if actual_names != desired: raise SystemExit('terminal label PUT mismatch')
-          comment={'done':'Agent completed.','failed':'Agent failed safely; no branch was published.','needs-human':'Agent stopped safely: question protocol violation needs human review.'}[status]
+          comment={'done':'Agent completed.','failed':'Agent failed safely; no branch was published.','capacity-exhausted':'Agent paused safely: Claude OAuth capacity is exhausted; supervisor retry may resume it.','needs-human':'Agent stopped safely: question protocol violation needs human review.'}[status]
           with urllib.request.urlopen(request(f'/repos/{repo}/issues/{issue}/comments', 'POST', {'body':comment}), timeout=15) as response: posted=json.loads(response.read())
           if not isinstance(posted, dict) or not isinstance(posted.get('id'), int): raise SystemExit('terminal comment POST invalid')
           PY
@@ -622,6 +656,10 @@ jobs:
           if [ "$GATE_PROCEED" = false ] && [ "$GATE_CLAIM" = pre ]; then exit 0; fi
           if [ "$GATE_PROCEED" != true ]; then
             terminal --status failed
+            exit 0
+          fi
+          if [ -f "$RUNNER_TEMP/claude-capacity-exhausted" ]; then
+            terminal --status capacity-exhausted
             exit 0
           fi
           case "$PLAN_REQUESTED:$PLAN_OUTCOME:$QUESTION_OUTCOME" in

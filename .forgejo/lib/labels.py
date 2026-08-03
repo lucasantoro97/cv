@@ -14,7 +14,8 @@ from pathlib import Path
 
 from question import QuestionError, parse_envelope, render_comment, validate
 
-TERMINAL_LABELS = {"ai:run", "ai:running", "ai:done", "ai:failed", "ai:question", "needs-human"}
+TERMINAL_LABELS = {"ai:run", "ai:running", "ai:done", "ai:failed", "ai:capacity-exhausted",
+                   "ai:question", "needs-human"}
 ANSWER_LABELS = {"ai:answered-1", "ai:answered-2"}
 QUESTION_PUBLISH_MARKER = re.compile(
     r"<!-- therness-question-publish:v1 question-comment-id=([1-9][0-9]*) "
@@ -155,7 +156,7 @@ def _counter_requires_human(names: set[str]) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--status", choices=("done", "failed", "needs-human"))
+    parser.add_argument("--status", choices=("done", "failed", "capacity-exhausted", "needs-human"))
     parser.add_argument("--question-file", type=Path)
     parser.add_argument("--verify-exact-bot", action="store_true")
     args = parser.parse_args()
@@ -209,11 +210,14 @@ def main() -> None:
 
     status = args.status
     assert status is not None
-    desired = keep | ({"needs-human"} if status == "needs-human" else {"ai:" + status})
+    desired = keep | ({"needs-human"} if status == "needs-human" else
+                      {"ai:failed", "ai:capacity-exhausted"} if status == "capacity-exhausted" else
+                      {"ai:" + status})
     _put_labels(root, repo, issue, headers, desired)
     comment = {
         "done": "Agent completed.",
         "failed": "Agent failed safely; no branch was published.",
+        "capacity-exhausted": "Agent paused safely: Claude OAuth capacity is exhausted; supervisor retry may resume it.",
         "needs-human": "Agent stopped safely: question protocol violation needs human review.",
     }[status]
     _post_comment(root, repo, issue, headers, comment)
