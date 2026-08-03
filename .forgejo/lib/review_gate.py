@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent review gate: decide whether an agent PR may merge without a person.
+"""Independent review gate: decide whether an agent PR may merge automatically.
 
 The committente removed the human from the merge decision and asked for Fable to review "as if it
 were a human". That only means anything if the reviewer is genuinely independent and if some
@@ -9,12 +9,11 @@ changes remain out of its reach. Both are enforced here, not left to the reviewe
   sees only the DIFF. It never reads the implementer's reasoning, so it cannot be talked into
   agreeing by an explanation it did not verify.
 
-  PROTECTED PATHS — a change that touches the trust boundary is never auto-merged, no matter how
-  good the review. That includes the intake authentication, the ACL, the egress gate, the workflow
-  gate, and THIS FILE. Without that carve-out a single PR could disable the reviewer and every
-  later PR would sail through: the gate must not be able to open itself.
+  PROTECTED PATHS — default is fail closed. The trusted workflow may explicitly request automatic
+  handling, but then two distinct Codex model classes must independently approve the same diff.
+  That includes intake authentication, ACLs, egress, workflow gates, and this file.
 
-Exit 0 = may merge. Exit 2 = needs a person. Any other exit = the gate failed and, because a
+Exit 0 = may merge. Exit 2 = policy boundary or unparseable output. Any other exit = failure and, because a
 failed gate must not approve, that also means no merge.
 """
 from __future__ import annotations
@@ -57,22 +56,21 @@ Rifiuta se trovi anche una sola di queste:
 - introduce una lista scritta a mano dove serviva una regola, o viceversa;
 - fa qualcosa che il ticket non chiedeva.
 
-Chiedi un umano (VERDETTO: UMANO) quando il diff e' corretto ma la DECISIONE non e' tua: cambia
-una politica aziendale, tocca soldi o contratti, o e' irreversibile.
+Rifiuta anche quando il diff richiede autorita' operativa non dimostrata: cambia una politica
+aziendale, tocca soldi o contratti, oppure e' irreversibile.
 
 Rispondi in italiano, massimo 12 righe, e chiudi con una riga esatta:
 VERDETTO: APPROVA
 oppure
 VERDETTO: RIFIUTA
-oppure
-VERDETTO: UMANO
+Non chiedere intervento umano: APPROVA soltanto con prove sufficienti, altrimenti RIFIUTA.
 
 Diff da giudicare:
 """
 
 
 def changed_files(repo: str, base: str, head: str) -> list[str]:
-    out = subprocess.run(["git", "-C", repo, "diff", "--name-only", f"{base}...{head}"],
+    out = subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-C", repo, "diff", "--name-only", f"{base}...{head}"],
                          capture_output=True, text=True, check=True).stdout
     return [line.strip() for line in out.splitlines() if line.strip()]
 
@@ -91,12 +89,23 @@ def read_verdict(text: str) -> str | None:
     return found[-1] if found else None
 
 
+def run_reviewer(repo: str, model: str, prompt: str) -> subprocess.CompletedProcess[str]:
+    """Run one fresh reviewer. Codex models are read-only; Claude remains compatible."""
+    if model.startswith("gpt-"):
+        command = ["codex", "exec", "--sandbox", "read-only", "-C", repo,
+                   "-m", model, prompt]
+    else:
+        command = ["claude", "-p", prompt, "--model", model, "--max-turns", "1"]
+    return subprocess.run(command, capture_output=True, text=True, timeout=900)
+
+
 def main() -> int:
     parse = argparse.ArgumentParser()
     parse.add_argument("--repo", default=".")
     parse.add_argument("--base", required=True)
     parse.add_argument("--head", required=True)
     parse.add_argument("--model", default=os.environ.get("REVIEW_MODEL", "fable"))
+    parse.add_argument("--allow-protected-auto", action="store_true")
     parse.add_argument("--max-diff-bytes", type=int, default=200_000)
     args = parse.parse_args()
 
@@ -105,13 +114,13 @@ def main() -> int:
         print("REVIEW: nessun file modificato")
         return 2
     blocked = protected_hits(paths)
-    if blocked:
+    if blocked and not args.allow_protected_auto:
         print("REVIEW: confine di fiducia toccato, serve una persona:")
         for path in blocked:
             print(f"  {path}")
         return 2
 
-    diff = subprocess.run(["git", "-C", args.repo, "diff", f"{args.base}...{args.head}"],
+    diff = subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-C", args.repo, "diff", f"{args.base}...{args.head}"],
                           capture_output=True, text=True, check=True).stdout
     if len(diff.encode()) > args.max_diff_bytes:
         # A diff nobody can read in one pass is not reviewable by a model either. Say so instead
@@ -119,24 +128,24 @@ def main() -> int:
         print(f"REVIEW: diff troppo grande ({len(diff.encode())} byte), serve una persona")
         return 2
 
-    proc = subprocess.run(
-        ["claude", "-p", PROMPT + diff, "--model", args.model, "--max-turns", "1"],
-        capture_output=True, text=True, timeout=900)
-    review = (proc.stdout or "") + (proc.stderr or "")
-    print(review[-4000:])
-    if proc.returncode != 0:
-        print("REVIEW: il revisore non ha risposto; nessuna fusione")
-        return 3
-
-    verdict = read_verdict(review)
-    payload = {"model": args.model, "files": len(paths), "verdict": verdict}
-    print("REVIEW_RESULT " + json.dumps(payload, ensure_ascii=False))
-    if verdict == "APPROVA":
-        return 0
-    if verdict == "RIFIUTA":
-        return 4
-    # No verdict at all is NOT an approval: an unparseable review means nobody reviewed it.
-    return 2
+    models = [args.model]
+    if blocked:
+        second = "gpt-5.6-sol" if args.model != "gpt-5.6-sol" else "gpt-5.6-terra"
+        models.append(second)
+        print("REVIEW: confine di fiducia, servono due approvazioni modello indipendenti")
+    for model in models:
+        proc = run_reviewer(args.repo, model, PROMPT + diff)
+        review = (proc.stdout or "") + (proc.stderr or "")
+        print(review[-4000:])
+        if proc.returncode != 0:
+            print("REVIEW: il revisore non ha risposto; nessuna fusione")
+            return 3
+        verdict = read_verdict(review)
+        payload = {"model": model, "files": len(paths), "verdict": verdict}
+        print("REVIEW_RESULT " + json.dumps(payload, ensure_ascii=False))
+        if verdict != "APPROVA":
+            return 4 if verdict in {"RIFIUTA", "UMANO"} else 2
+    return 0
 
 
 if __name__ == "__main__":

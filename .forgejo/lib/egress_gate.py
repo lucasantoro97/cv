@@ -20,14 +20,14 @@ def reject(value: str, where: str) -> None:
 
 def check(repo: str | Path, base: str, head: str, title: str, body: str) -> None:
     repo = str(repo); reject(title, "PR title"); reject(body, "PR body")
-    changed = subprocess.run(["git", "-C", repo, "diff", "--name-status", "-z", f"{base}..{head}"], capture_output=True, check=True).stdout.split(b"\0")
+    changed = subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-C", repo, "diff", "--name-status", "-z", f"{base}..{head}"], capture_output=True, check=True).stdout.split(b"\0")
     for item in changed:
         if not item: continue
         name = item.split(b"\t")[-1].decode("utf-8", "surrogateescape"); reject(name, "filename")
         path = Path(repo, name)
         if path.exists() and path.is_file() and path.stat().st_size > MAX_FILE: raise GateError("oversized output")
         if path.exists() and path.is_file() and b"\0" in path.read_bytes()[:8192]: raise GateError("binary output")
-    diff = subprocess.run(["git", "-C", repo, "diff", "--no-ext-diff", "--binary", f"{base}..{head}"], text=True, errors="replace", capture_output=True, check=True).stdout
+    diff = subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-C", repo, "diff", "--no-ext-diff", "--binary", f"{base}..{head}"], text=True, errors="replace", capture_output=True, check=True).stdout
     reject(diff, "commit range")
 
 if __name__ == "__main__":
