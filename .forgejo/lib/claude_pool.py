@@ -1,121 +1,992 @@
 #!/usr/bin/env python3
-"""Run one Claude CLI command against a closed OAuth pool without logging tokens.
+"""Run the generic implementer through a closed, transactional Claude pool.
 
-Exit 75 means every configured account failed with an explicitly transient
-capacity/authentication response.  Callers must surface it as a recoverable
-job failure, never mistake it for a completed ticket.
+Every account runs in a fresh local clone inside a bubblewrap filesystem
+namespace.  The namespace exposes only that clone, a private HOME, the runtime,
+and the minimum TLS/DNS files needed by the provider.  Failed attempts are
+discarded; a successful attempt is promoted as a bounded git patch plus bounded
+new regular files.  Provider output and pool/account identifiers are never
+emitted.
+
+Exit 0 means Claude completed (possibly without a promotable diff).  Exit 75
+means every configured account returned a structured capacity/auth failure.
+Every other nonzero exit is safe fallback input for the Codex ladder.
 """
 from __future__ import annotations
 
+import argparse
 import base64
 import hashlib
 import json
 import os
 import re
+import selectors
+import shutil
+import signal
+import stat
 import subprocess
 import sys
-from collections.abc import Sequence
+import tempfile
+import time
+from collections.abc import Mapping
+from pathlib import Path, PurePosixPath
+from typing import NamedTuple
 
 
 EXHAUSTED = 75
+TIMEOUT = 124
+OUTPUT_LIMIT = 125
 KEY = re.compile(r"^[0-9a-f]{12}$")
-# These are *protocol records*, not a grep across model output.  A ticket can
-# ask the model to emit words such as "rate limit" or "unauthorized"; those
-# words must never rotate accounts.  The structured CLI event is authoritative;
-# the second form is the exact one-line orchestra limit record.
-ORCHESTRA_LIMIT = re.compile(
-    r'^error="(?:rate_limit|authentication_failed)", isApiErrorMessage=true$',
+MODEL = "sonnet"
+TOOLS = ("Read", "Edit", "Write", "Glob", "Grep")
+DISALLOWED_TOOLS = (
+    "Bash",
+    "WebFetch",
+    "WebSearch",
+    "Skill",
+    "Agent",
+    "Task",
+    "NotebookEdit",
 )
+SAFE_PARENT_ENV = (
+    "LANG",
+    "LC_ALL",
+    "SSL_CERT_DIR",
+    "SSL_CERT_FILE",
+    "TERM",
+)
+RETRYABLE_ERRORS = {"rate_limit", "authentication_failed"}
+PROTECTED_SCAFFOLDS = (".issue-assets", ".issue-raw.txt", ".issue-prompt.txt")
+MAX_POOL_BYTES = 1024 * 1024
+MAX_POOL_ACCOUNTS = 32
+MAX_TOKEN_BYTES = 16 * 1024
+MAX_PROMPT_BYTES = 256 * 1024
+MAX_EVENT_BYTES = 8 * 1024 * 1024
+MAX_BASELINE_BYTES = 256 * 1024 * 1024
+MAX_PROMOTION_BYTES = 64 * 1024 * 1024
+MAX_PROMOTION_FILE_BYTES = 16 * 1024 * 1024
+MAX_PROMOTION_FILES = 4096
+MIN_TIMEOUT_SEC = 1
+MAX_TIMEOUT_SEC = 1800
+MIN_TURNS = 1
+MAX_TURNS = 50
 
 
 class PoolError(ValueError):
     pass
 
 
+class Baseline(NamedTuple):
+    head: str
+    status: bytes
+    protected: tuple[str, ...]
+    protected_digest: str
+
+
 def _retryable_cli_failure(output: bytes) -> bool:
+    """Trust only top-level API error fields from Claude stream-json events."""
     for line in output.decode("utf-8", "replace").splitlines():
-        if ORCHESTRA_LIMIT.fullmatch(line):
-            return True
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if (isinstance(event, dict) and event.get("isApiErrorMessage") is True
-                and event.get("error") in {"rate_limit", "authentication_failed"}):
+        message = event.get("message") if isinstance(event, dict) else None
+        if (
+            isinstance(event, dict)
+            and event.get("type") == "assistant"
+            and event.get("isApiErrorMessage") is True
+            and event.get("error") in RETRYABLE_ERRORS
+            and isinstance(message, dict)
+            and message.get("role") == "assistant"
+        ):
             return True
     return False
 
 
-def _legacy_key(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
+def _successful_cli_result(output: bytes) -> bool:
+    """Require one unambiguous terminal stream-json success event."""
+    events: list[dict[str, object]] = []
+    for line in output.decode("utf-8", "replace").splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(event, dict):
+            return False
+        events.append(event)
+    results = [event for event in events if event.get("type") == "result"]
+    if len(results) != 1 or not events or events[-1] is not results[0]:
+        return False
+    terminal = results[0]
+    if terminal.get("subtype") != "success" or terminal.get("is_error") is True:
+        return False
+    return not any(
+        event.get("isApiErrorMessage") is True or event.get("type") == "error"
+        for event in events
+    )
 
 
-def _pool(environ: dict[str, str]) -> list[tuple[str, str]]:
+def _pool(environ: Mapping[str, str]) -> list[str]:
     encoded = environ.get("CLAUDE_CODE_OAUTH_POOL_B64", "")
-    if not encoded:
-        legacy = environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
-        if not legacy:
-            raise PoolError("no Claude OAuth credential configured")
-        return [(_legacy_key(legacy), legacy)]
+    if not encoded or len(encoded) > MAX_POOL_BYTES:
+        raise PoolError("missing or invalid Claude OAuth pool")
     try:
         decoded = base64.b64decode(encoded, validate=True)
         rows = json.loads(decoded.decode("utf-8"))
     except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise PoolError("invalid Claude OAuth pool") from exc
-    if not isinstance(rows, list) or not rows:
-        raise PoolError("invalid Claude OAuth pool")
-    pool: list[tuple[str, str]] = []
+        raise PoolError("missing or invalid Claude OAuth pool") from exc
+    if not isinstance(rows, list) or not rows or len(rows) > MAX_POOL_ACCOUNTS:
+        raise PoolError("missing or invalid Claude OAuth pool")
     keys: set[str] = set()
     tokens: set[str] = set()
+    pool: list[str] = []
     for row in rows:
         if not isinstance(row, dict) or set(row) != {"key", "token"}:
-            raise PoolError("invalid Claude OAuth pool")
+            raise PoolError("missing or invalid Claude OAuth pool")
         key, token = row["key"], row["token"]
-        if (not isinstance(key, str) or not KEY.fullmatch(key)
-                or not isinstance(token, str) or not token or token != token.strip()
-                or key in keys or token in tokens):
-            raise PoolError("invalid Claude OAuth pool")
-        keys.add(key); tokens.add(token); pool.append((key, token))
+        if (
+            not isinstance(key, str)
+            or not KEY.fullmatch(key)
+            or not isinstance(token, str)
+            or not token
+            or token != token.strip()
+            or len(token.encode("utf-8")) > MAX_TOKEN_BYTES
+            or key in keys
+            or token in tokens
+        ):
+            raise PoolError("missing or invalid Claude OAuth pool")
+        keys.add(key)
+        tokens.add(token)
+        pool.append(token)
     return pool
 
 
-def run(argv: Sequence[str], environ: dict[str, str] | None = None) -> int:
-    if not argv:
-        raise PoolError("missing Claude command")
+def _bounded_int(value: int, minimum: int, maximum: int, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
+        raise PoolError(f"invalid {label}")
+    return value
+
+
+def _model(environ: Mapping[str, str]) -> str:
+    model = environ.get("AGENT_MODEL", "")
+    if model != MODEL:
+        raise PoolError("AGENT_MODEL must be exact sonnet")
+    return model
+
+
+def _regular_prompt(path: str) -> tuple[bytes, str]:
+    absolute = os.path.abspath(path)
+    try:
+        info = os.lstat(absolute)
+    except OSError as exc:
+        raise PoolError("prompt file unavailable") from exc
+    if not stat.S_ISREG(info.st_mode) or info.st_size <= 0 or info.st_size > MAX_PROMPT_BYTES:
+        raise PoolError("prompt file is not a bounded regular file")
+    try:
+        raw = Path(absolute).read_bytes()
+        raw.decode("utf-8", "strict")
+    except (OSError, UnicodeError) as exc:
+        raise PoolError("prompt file is not valid UTF-8") from exc
+    if not raw or len(raw) > MAX_PROMPT_BYTES:
+        raise PoolError("prompt file is not a bounded regular file")
+    return raw, absolute
+
+
+def _worktree(path: str) -> str:
+    absolute = os.path.abspath(path)
+    try:
+        info = os.lstat(absolute)
+    except OSError as exc:
+        raise PoolError("worktree unavailable") from exc
+    if not stat.S_ISDIR(info.st_mode):
+        raise PoolError("worktree must be a real directory")
+    return absolute
+
+
+def _remaining(deadline: float) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise subprocess.TimeoutExpired("Claude transaction", 0)
+    return remaining
+
+
+def _git_env(environ: Mapping[str, str], root: Path) -> dict[str, str]:
+    home = root / "git-home"
+    home.mkdir(mode=0o700, exist_ok=True)
+    return {
+        "PATH": environ.get("PATH") or "/usr/local/bin:/usr/bin:/bin",
+        "LANG": environ.get("LANG") or "C.UTF-8",
+        "HOME": str(home),
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_SYSTEM": "/dev/null",
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_OPTIONAL_LOCKS": "0",
+    }
+
+
+def _git(
+    worktree: str,
+    git_env: Mapping[str, str],
+    deadline: float,
+    *args: str,
+    input_bytes: bytes | None = None,
+    check: bool = True,
+) -> subprocess.CompletedProcess[bytes]:
+    result = subprocess.run(
+        [
+            "git",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "core.fsmonitor=false",
+            "-C",
+            worktree,
+            *args,
+        ],
+        input=input_bytes,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=dict(git_env),
+        timeout=_remaining(deadline),
+        check=False,
+    )
+    if check and result.returncode != 0:
+        raise PoolError("safe git transaction failed")
+    return result
+
+
+def _safe_relative(path: str) -> str:
+    if not path or "\x00" in path or path.startswith("/"):
+        raise PoolError("unsafe candidate path")
+    pure = PurePosixPath(path)
+    if any(part in ("", ".", "..", ".git") for part in pure.parts):
+        raise PoolError("unsafe candidate path")
+    return pure.as_posix()
+
+
+def _status_roots(raw: bytes) -> tuple[str, ...]:
+    roots: list[str] = []
+    for entry in raw.split(b"\0"):
+        if not entry:
+            continue
+        if not entry.startswith(b"?? "):
+            raise PoolError("Claude baseline has tracked changes")
+        path = os.fsdecode(entry[3:]).rstrip("/")
+        roots.append(_safe_relative(path))
+    return tuple(roots)
+
+
+def _under(path: str, roots: tuple[str, ...]) -> bool:
+    return any(path == root or path.startswith(f"{root}/") for root in roots)
+
+
+def _hash_node(root: Path, relative: str, digest: hashlib._Hash, budget: list[int]) -> None:
+    path = root / relative
+    info = os.lstat(path)
+    mode = stat.S_IMODE(info.st_mode)
+    digest.update(relative.encode("utf-8", "surrogateescape") + b"\0")
+    digest.update(f"{stat.S_IFMT(info.st_mode):o}:{mode:o}\0".encode())
+    if stat.S_ISREG(info.st_mode):
+        budget[0] += info.st_size
+        if budget[0] > MAX_BASELINE_BYTES:
+            raise PoolError("protected baseline is too large")
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    elif stat.S_ISDIR(info.st_mode):
+        for child in sorted(path.iterdir(), key=lambda value: os.fsencode(value.name)):
+            _hash_node(root, f"{relative}/{child.name}", digest, budget)
+    else:
+        raise PoolError("protected baseline contains a special file")
+
+
+def _protected_digest(root: str, protected: tuple[str, ...]) -> str:
+    digest = hashlib.sha256()
+    budget = [0]
+    for relative in protected:
+        path = Path(root) / relative
+        if path.exists() or path.is_symlink():
+            _hash_node(Path(root), relative, digest, budget)
+        else:
+            digest.update(f"absent:{relative}\0".encode("utf-8", "surrogateescape"))
+    return digest.hexdigest()
+
+
+def _baseline(
+    worktree: str,
+    prompt_file: str,
+    git_env: Mapping[str, str],
+    deadline: float,
+) -> Baseline:
+    top = _git(worktree, git_env, deadline, "rev-parse", "--show-toplevel").stdout
+    try:
+        top_path = top.decode("utf-8", "strict").strip()
+    except UnicodeDecodeError as exc:
+        raise PoolError("worktree path is not UTF-8") from exc
+    if not top_path or not os.path.samefile(top_path, worktree):
+        raise PoolError("worktree must be the git top level")
+    head = _git(worktree, git_env, deadline, "rev-parse", "--verify", "HEAD").stdout.decode().strip()
+    tracked = _git(
+        worktree,
+        git_env,
+        deadline,
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=normal",
+    ).stdout
+    roots = list(_status_roots(tracked))
+    for scaffold in PROTECTED_SCAFFOLDS:
+        if (Path(worktree) / scaffold).exists() and not _under(scaffold, tuple(roots)):
+            roots.append(scaffold)
+    try:
+        common = os.path.commonpath((worktree, prompt_file))
+    except ValueError:
+        common = ""
+    if common == worktree and Path(prompt_file).exists():
+        prompt_relative = _safe_relative(os.path.relpath(prompt_file, worktree))
+        if not _under(prompt_relative, tuple(roots)):
+            roots.append(prompt_relative)
+    protected = tuple(dict.fromkeys(roots))
+    return Baseline(
+        head=head,
+        status=tracked,
+        protected=protected,
+        protected_digest=_protected_digest(worktree, protected),
+    )
+
+
+def _assert_baseline(
+    worktree: str,
+    baseline: Baseline,
+    git_env: Mapping[str, str],
+    deadline: float,
+) -> None:
+    current = _baseline(worktree, str(Path(worktree) / ".issue-prompt.txt"), git_env, deadline)
+    if (
+        current.head != baseline.head
+        or current.status != baseline.status
+        or current.protected != baseline.protected
+        or current.protected_digest != baseline.protected_digest
+    ):
+        raise PoolError("original worktree changed during Claude transaction")
+
+
+def _copy_regular_tree(source: Path, destination: Path) -> None:
+    info = os.lstat(source)
+    if stat.S_ISREG(info.st_mode):
+        destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        shutil.copy2(source, destination, follow_symlinks=False)
+    elif stat.S_ISDIR(info.st_mode):
+        destination.mkdir(mode=stat.S_IMODE(info.st_mode) or 0o700, parents=True, exist_ok=True)
+        for child in source.iterdir():
+            _copy_regular_tree(child, destination / child.name)
+    else:
+        raise PoolError("protected baseline contains a special file")
+
+
+def _prepare_clone(
+    original: str,
+    sandbox: Path,
+    baseline: Baseline,
+    git_env: Mapping[str, str],
+    deadline: float,
+) -> None:
+    result = subprocess.run(
+        [
+            "git",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "clone",
+            "--no-local",
+            "--no-hardlinks",
+            "--quiet",
+            "--no-checkout",
+            "--",
+            original,
+            str(sandbox),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=dict(git_env),
+        timeout=_remaining(deadline),
+        check=False,
+    )
+    if result.returncode != 0:
+        raise PoolError("safe local clone failed")
+    _git(str(sandbox), git_env, deadline, "checkout", "--quiet", "--detach", baseline.head)
+    for relative in baseline.protected:
+        source = Path(original) / relative
+        if source.exists():
+            _copy_regular_tree(source, sandbox / relative)
+
+
+def _write_settings(path: Path) -> None:
+    allow = [f"{tool}(//workspace/**)" for tool in TOOLS]
+    settings = {
+        "permissions": {
+            "defaultMode": "dontAsk",
+            "allow": allow,
+            "deny": list(DISALLOWED_TOOLS),
+        },
+        "enabledPlugins": {},
+    }
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump(settings, handle, sort_keys=True, separators=(",", ":"))
+        handle.write("\n")
+
+
+def _command(executable: str, model: str, max_turns: int, settings: str) -> list[str]:
+    allowed = ",".join(f"{tool}(//workspace/**)" for tool in TOOLS)
+    denied = ",".join(DISALLOWED_TOOLS)
+    return [
+        executable,
+        "-p",
+        "--safe-mode",
+        "--model",
+        model,
+        "--max-turns",
+        str(max_turns),
+        "--tools",
+        ",".join(TOOLS),
+        "--allowedTools",
+        allowed,
+        "--disallowedTools",
+        denied,
+        "--permission-mode",
+        "dontAsk",
+        "--settings",
+        settings,
+        "--setting-sources",
+        "",
+        "--strict-mcp-config",
+        "--disable-slash-commands",
+        "--no-chrome",
+        "--no-session-persistence",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+    ]
+
+
+def _child_env(parent: Mapping[str, str], token: str) -> dict[str, str]:
+    child = {name: parent[name] for name in SAFE_PARENT_ENV if parent.get(name)}
+    child.update(
+        {
+            "PATH": "/usr/local/bin:/usr/bin:/bin",
+            "HOME": "/home/agent",
+            "CLAUDE_CONFIG_DIR": "/home/agent/claude-config",
+            "XDG_CONFIG_HOME": "/home/agent/xdg-config",
+            "XDG_CACHE_HOME": "/home/agent/xdg-cache",
+            "XDG_DATA_HOME": "/home/agent/xdg-data",
+            "TMPDIR": "/tmp",
+            "CLAUDE_CODE_OAUTH_TOKEN": token,
+        }
+    )
+    for name in ("SSL_CERT_DIR", "SSL_CERT_FILE"):
+        if name in child and not child[name].startswith(("/etc/", "/usr/")):
+            child.pop(name)
+    return child
+
+
+def _sandbox_command(
+    environ: Mapping[str, str],
+    sandbox: Path,
+    private_home: Path,
+    private_tmp: Path,
+    model: str,
+    max_turns: int,
+) -> list[str]:
+    search_path = environ.get("PATH") or "/usr/local/bin:/usr/bin:/bin"
+    bwrap = shutil.which("bwrap", path=search_path)
+    claude = shutil.which("claude", path=search_path)
+    if not bwrap or not claude:
+        raise PoolError("required Claude sandbox runtime unavailable")
+    claude_path = Path(claude)
+    inner_executable = str(claude_path)
+    extra_mount: list[str] = []
+    if not str(claude_path).startswith(("/usr/", "/bin/")):
+        extra_mount = ["--dir", "/opt", "--ro-bind", str(claude_path.parent), "/opt/claude-bin"]
+        inner_executable = f"/opt/claude-bin/{claude_path.name}"
+    command = [
+        bwrap,
+        "--unshare-all",
+        "--share-net",
+        "--die-with-parent",
+        "--cap-drop",
+        "ALL",
+        "--ro-bind",
+        "/usr",
+        "/usr",
+        "--ro-bind",
+        "/bin",
+        "/bin",
+        "--ro-bind",
+        "/lib",
+        "/lib",
+        "--ro-bind-try",
+        "/lib64",
+        "/lib64",
+        "--dir",
+        "/etc",
+        "--ro-bind-try",
+        "/etc/ssl",
+        "/etc/ssl",
+        "--ro-bind-try",
+        "/etc/ca-certificates",
+        "/etc/ca-certificates",
+        "--ro-bind-try",
+        "/etc/ca-certificates.conf",
+        "/etc/ca-certificates.conf",
+        "--ro-bind-try",
+        "/etc/resolv.conf",
+        "/etc/resolv.conf",
+        "--ro-bind-try",
+        "/etc/hosts",
+        "/etc/hosts",
+        "--ro-bind-try",
+        "/etc/nsswitch.conf",
+        "/etc/nsswitch.conf",
+        "--ro-bind-try",
+        "/etc/passwd",
+        "/etc/passwd",
+        "--ro-bind-try",
+        "/etc/group",
+        "/etc/group",
+        "--ro-bind-try",
+        "/etc/ld.so.cache",
+        "/etc/ld.so.cache",
+        "--dev",
+        "/dev",
+        "--dir",
+        "/proc",
+        "--dir",
+        "/home",
+        "--bind",
+        str(private_home),
+        "/home/agent",
+        "--bind",
+        str(private_tmp),
+        "/tmp",
+        "--bind",
+        str(sandbox),
+        "/workspace",
+        "--ro-bind",
+        str(sandbox / ".git"),
+        "/workspace/.git",
+        *extra_mount,
+        "--chdir",
+        "/workspace",
+        "--",
+        *_command(
+            inner_executable,
+            model,
+            max_turns,
+            "/home/agent/settings.json",
+        ),
+    ]
+    return command
+
+
+def _group_exists(pgid: int) -> bool:
+    try:
+        os.killpg(pgid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def _terminate_group(process: subprocess.Popen[bytes]) -> None:
+    """Reap the leader and destroy its session even if the leader already exited."""
+    pgid = process.pid
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        pass
+    end = time.monotonic() + 0.75
+    while _group_exists(pgid) and time.monotonic() < end:
+        time.sleep(0.025)
+    if _group_exists(pgid):
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+    try:
+        process.wait(timeout=1)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=1)
+
+
+def _capture_process(
+    process: subprocess.Popen[bytes],
+    deadline: float,
+) -> tuple[int, bytes, bool, bool]:
+    if process.stdout is None:
+        raise PoolError("Claude output pipe unavailable")
+    os.set_blocking(process.stdout.fileno(), False)
+    selector = selectors.DefaultSelector()
+    selector.register(process.stdout, selectors.EVENT_READ)
+    output = bytearray()
+    timed_out = False
+    overflow = False
+    eof = False
+    returncode: int | None = None
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                timed_out = True
+                break
+            for key, _mask in selector.select(min(0.1, remaining)):
+                chunk = os.read(key.fd, 64 * 1024)
+                if not chunk:
+                    eof = True
+                    selector.unregister(process.stdout)
+                    break
+                if len(output) + len(chunk) > MAX_EVENT_BYTES:
+                    overflow = True
+                    break
+                output.extend(chunk)
+            if overflow:
+                break
+            polled = process.poll()
+            if polled is not None:
+                returncode = polled
+                _terminate_group(process)
+                if eof:
+                    break
+                # Teardown closes stdout inherited by any descendant; drain once.
+                while True:
+                    try:
+                        chunk = os.read(process.stdout.fileno(), 64 * 1024)
+                    except BlockingIOError:
+                        break
+                    if not chunk:
+                        eof = True
+                        break
+                    if len(output) + len(chunk) > MAX_EVENT_BYTES:
+                        overflow = True
+                        break
+                    output.extend(chunk)
+                break
+    finally:
+        selector.close()
+        _terminate_group(process)
+    if returncode is None:
+        returncode = process.returncode if process.returncode is not None else 1
+    return returncode, bytes(output), timed_out, overflow
+
+
+def _candidate_paths(
+    sandbox: str,
+    baseline: Baseline,
+    git_env: Mapping[str, str],
+    deadline: float,
+) -> tuple[bytes, tuple[str, ...], tuple[str, ...]]:
+    tracked_raw = _git(
+        sandbox, git_env, deadline, "ls-files", "-z",
+    ).stdout
+    tracked_paths = {
+        _safe_relative(os.fsdecode(value)) for value in tracked_raw.split(b"\0") if value
+    }
+
+    def reject_untracked_specials(directory: Path, prefix: str = "") -> None:
+        for entry in os.scandir(directory):
+            if not prefix and entry.name == ".git":
+                continue
+            relative = _safe_relative(f"{prefix}/{entry.name}".lstrip("/"))
+            info = entry.stat(follow_symlinks=False)
+            if stat.S_ISDIR(info.st_mode):
+                reject_untracked_specials(Path(entry.path), relative)
+            elif not stat.S_ISREG(info.st_mode) and relative not in tracked_paths:
+                raise PoolError("Claude candidate contains an untracked special file")
+
+    reject_untracked_specials(Path(sandbox))
+    patch = _git(
+        sandbox,
+        git_env,
+        deadline,
+        "diff",
+        "--binary",
+        "--full-index",
+        "--no-ext-diff",
+        "--no-renames",
+        baseline.head,
+        "--",
+    ).stdout
+    changed_raw = _git(
+        sandbox,
+        git_env,
+        deadline,
+        "diff",
+        "--name-only",
+        "-z",
+        "--no-ext-diff",
+        "--no-renames",
+        baseline.head,
+        "--",
+    ).stdout
+    changed = tuple(_safe_relative(os.fsdecode(value)) for value in changed_raw.split(b"\0") if value)
+    new_raw = _git(
+        sandbox,
+        git_env,
+        deadline,
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "-z",
+    ).stdout
+    new = tuple(
+        _safe_relative(os.fsdecode(value))
+        for value in new_raw.split(b"\0")
+        if value and not _under(_safe_relative(os.fsdecode(value)), baseline.protected)
+    )
+    if any(_under(path, baseline.protected) for path in changed):
+        raise PoolError("Claude attempted to modify protected scaffold")
+    if len(set(changed + new)) != len(changed + new):
+        raise PoolError("candidate paths overlap")
+    if len(changed) + len(new) > MAX_PROMOTION_FILES or len(patch) > MAX_PROMOTION_BYTES:
+        raise PoolError("Claude candidate exceeds promotion bounds")
+    total = len(patch)
+    for relative in changed + new:
+        path = Path(sandbox) / relative
+        if path.exists() or path.is_symlink():
+            info = os.lstat(path)
+            if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_PROMOTION_FILE_BYTES:
+                raise PoolError("Claude candidate contains a special or oversized file")
+            total += info.st_size
+    if total > MAX_PROMOTION_BYTES:
+        raise PoolError("Claude candidate exceeds promotion bounds")
+    return patch, changed, new
+
+
+def _remove_node(path: Path) -> None:
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return
+    if stat.S_ISDIR(info.st_mode):
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
+def _copy_new_file(source: Path, destination: Path) -> None:
+    info = os.lstat(source)
+    if not stat.S_ISREG(info.st_mode):
+        raise PoolError("new candidate is not a regular file")
+    current = destination.parent
+    missing: list[Path] = []
+    while not current.exists():
+        missing.append(current)
+        current = current.parent
+    if current.is_symlink() or not current.is_dir():
+        raise PoolError("new candidate parent is unsafe")
+    for parent in reversed(missing):
+        parent.mkdir(mode=0o755)
+    fd = os.open(
+        destination,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+        stat.S_IMODE(info.st_mode) or 0o600,
+    )
+    try:
+        with os.fdopen(fd, "wb") as output, source.open("rb") as input_handle:
+            for chunk in iter(lambda: input_handle.read(1024 * 1024), b""):
+                output.write(chunk)
+            output.flush()
+            os.fsync(output.fileno())
+    except BaseException:
+        _remove_node(destination)
+        raise
+
+
+def _promote(
+    original: str,
+    sandbox: str,
+    baseline: Baseline,
+    git_env: Mapping[str, str],
+    deadline: float,
+    root: Path,
+) -> bool:
+    patch, changed, new = _candidate_paths(sandbox, baseline, git_env, deadline)
+    _assert_baseline(original, baseline, git_env, deadline)
+    if not patch and not new:
+        return False
+    if patch:
+        _git(original, git_env, deadline, "apply", "--check", "--binary", "--whitespace=nowarn", "-", input_bytes=patch)
+    for relative in new:
+        destination = Path(original) / relative
+        if destination.exists() or destination.is_symlink():
+            raise PoolError("new candidate collides with original worktree")
+    backup = root / "promotion-backup"
+    backup.mkdir(mode=0o700)
+    existing: set[str] = set()
+    created_directories: set[Path] = set()
+    for relative in changed:
+        source = Path(original) / relative
+        if source.exists() or source.is_symlink():
+            info = os.lstat(source)
+            if not stat.S_ISREG(info.st_mode):
+                raise PoolError("original candidate path is not a regular file")
+            existing.add(relative)
+            _copy_regular_tree(source, backup / relative)
+    try:
+        if patch:
+            _git(original, git_env, deadline, "apply", "--binary", "--whitespace=nowarn", "-", input_bytes=patch)
+        for relative in new:
+            destination = Path(original) / relative
+            parent = destination.parent
+            while not parent.exists():
+                created_directories.add(parent)
+                parent = parent.parent
+            _copy_new_file(Path(sandbox) / relative, destination)
+    except BaseException:
+        for relative in changed + new:
+            _remove_node(Path(original) / relative)
+        for relative in existing:
+            _copy_regular_tree(backup / relative, Path(original) / relative)
+        for directory in sorted(created_directories, key=lambda value: len(value.parts), reverse=True):
+            try:
+                directory.rmdir()
+            except (FileNotFoundError, OSError):
+                pass
+        raise
+    return True
+
+
+def _run_attempt(
+    prompt: bytes,
+    worktree: str,
+    prompt_file: str,
+    model: str,
+    max_turns: int,
+    deadline: float,
+    token: str,
+    environ: Mapping[str, str],
+) -> tuple[int, bytes, bool]:
+    temp_parent = environ.get("RUNNER_TEMP") or None
+    if temp_parent is not None and not os.path.isdir(temp_parent):
+        raise PoolError("RUNNER_TEMP is not a directory")
+    try:
+        with tempfile.TemporaryDirectory(prefix=".claude-implementer.", dir=temp_parent) as raw_root:
+            root = Path(raw_root)
+            root.chmod(0o700)
+            git_env = _git_env(environ, root)
+            baseline = _baseline(worktree, prompt_file, git_env, deadline)
+            sandbox = root / "candidate"
+            _prepare_clone(worktree, sandbox, baseline, git_env, deadline)
+            private_home = root / "home"
+            private_tmp = root / "tmp"
+            private_home.mkdir(mode=0o700)
+            private_tmp.mkdir(mode=0o700)
+            for name in ("claude-config", "xdg-config", "xdg-cache", "xdg-data"):
+                (private_home / name).mkdir(mode=0o700)
+            settings = private_home / "settings.json"
+            prompt_path = root / "prompt.txt"
+            _write_settings(settings)
+            fd = os.open(prompt_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(prompt)
+            child_env = _child_env(environ, token)
+            with prompt_path.open("rb") as prompt_handle:
+                process = subprocess.Popen(
+                    _sandbox_command(environ, sandbox, private_home, private_tmp, model, max_turns),
+                    cwd=str(root),
+                    env=child_env,
+                    stdin=prompt_handle,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+                returncode, output, timed_out, overflow = _capture_process(process, deadline)
+            if timed_out:
+                return TIMEOUT, b"", True
+            if overflow:
+                return OUTPUT_LIMIT, b"", False
+            if returncode == 0 and _successful_cli_result(output):
+                try:
+                    _promote(worktree, str(sandbox), baseline, git_env, deadline, root)
+                except PoolError:
+                    return 1, b"", False
+            elif returncode == 0:
+                return 1, output, False
+            return returncode, output, False
+    except subprocess.TimeoutExpired:
+        return TIMEOUT, b"", True
+
+
+def run(
+    worktree: str,
+    prompt_file: str,
+    *,
+    max_turns: int,
+    timeout_sec: int,
+    environ: Mapping[str, str] | None = None,
+) -> int:
     env = dict(os.environ if environ is None else environ)
-    for key, token in _pool(env):
-        child_env = dict(env)
-        child_env["CLAUDE_CODE_OAUTH_TOKEN"] = token
-        # Each subprocess is a fresh Claude process; OAuth session state from an
-        # exhausted account cannot bleed into the next account.
-        result = subprocess.run(argv, env=child_env, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, check=False)
-        output = result.stdout or b""
-        sys.stdout.buffer.write(output)
-        sys.stdout.buffer.flush()
-        if result.returncode == 0:
+    model = _model(env)
+    turns = _bounded_int(max_turns, MIN_TURNS, MAX_TURNS, "max turns")
+    timeout = _bounded_int(timeout_sec, MIN_TIMEOUT_SEC, MAX_TIMEOUT_SEC, "timeout")
+    prompt, prompt_path = _regular_prompt(prompt_file)
+    directory = _worktree(worktree)
+    deadline = time.monotonic() + timeout
+    for token in _pool(env):
+        returncode, output, timed_out = _run_attempt(
+            prompt,
+            directory,
+            prompt_path,
+            model,
+            turns,
+            deadline,
+            token,
+            env,
+        )
+        if timed_out:
+            print("claude_pool: Claude transaction timed out safely", file=sys.stderr)
+            return TIMEOUT
+        if returncode == 0:
+            print("claude_pool: Claude transaction completed", file=sys.stderr)
             return 0
+        if returncode == OUTPUT_LIMIT:
+            print("claude_pool: Claude output exceeded bounded limit", file=sys.stderr)
+            return OUTPUT_LIMIT
         if not _retryable_cli_failure(output):
-            print(f"claude_pool: non-retryable Claude exit for account={key}", file=sys.stderr)
-            return result.returncode or 1
-        print(f"claude_pool: capacity/auth unavailable for account={key}", file=sys.stderr)
+            print("claude_pool: non-retryable Claude failure", file=sys.stderr)
+            return returncode or 1
+        print("claude_pool: Claude capacity/auth unavailable; rotating", file=sys.stderr)
     print("claude_pool: all configured accounts exhausted", file=sys.stderr)
     return EXHAUSTED
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    args = list(sys.argv[1:] if argv is None else argv)
-    if not args or args.pop(0) != "--":
-        print("usage: claude_pool.py -- CLAUDE_COMMAND ...", file=sys.stderr)
-        return 64
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--worktree", required=True)
+    parser.add_argument("--prompt-file", required=True)
+    parser.add_argument("--max-turns", type=int, default=30)
+    parser.add_argument("--timeout-sec", type=int, default=900)
+    args = parser.parse_args(argv)
     try:
-        return run(args)
+        return run(
+            args.worktree,
+            args.prompt_file,
+            max_turns=args.max_turns,
+            timeout_sec=args.timeout_sec,
+        )
     except PoolError as exc:
         print(f"claude_pool: {exc}", file=sys.stderr)
         return 64
     except OSError as exc:
         print(f"claude_pool: CLI unavailable ({type(exc).__name__})", file=sys.stderr)
         return 127
+    except subprocess.SubprocessError as exc:
+        print(f"claude_pool: CLI failed safely ({type(exc).__name__})", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
