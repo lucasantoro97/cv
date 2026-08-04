@@ -365,11 +365,38 @@ jobs:
               printf 'claude:sonnet\n' > "$RUNNER_TEMP/implementer-class"
               exit 0
             fi
-            [ "$claude_rc" -ne 0 ] || echo "Claude fallback completed without a diff" >&2
+            if [ "$claude_rc" -eq 0 ]; then
+              echo "Claude fallback completed without a diff; using local Gemma fallback" >&2
+            else
+              changed && { echo "safe stop: failed Claude transaction altered worktree" >&2; exit 1; }
+              echo "Claude fallback failed; using local Gemma fallback" >&2
+            fi
           else
-            echo "Claude fallback pool is unavailable" >&2
+            echo "Claude fallback pool is unavailable; using local Gemma fallback" >&2
           fi
-          echo "safe stop: no implementation after Codex primary and Claude fallback" >&2
+          local_gemma_rc=64
+          set +e
+          env -i PATH="$PATH" LANG="${LANG:-C.UTF-8}" LC_ALL="${LC_ALL:-}" \
+            TERM="${TERM:-dumb}" RUNNER_TEMP="$RUNNER_TEMP" \
+            python3 "$RUNNER_TEMP/lib/claude_pool.py" --provider local-gemma \
+              --worktree . --prompt-file .issue-prompt.txt --timeout-sec 900
+          local_gemma_rc=$?
+          set -e
+          if [ "$local_gemma_rc" -eq 0 ] && changed; then
+            printf 'local_gemma:gemma-4-26b-a4b\n' > "$RUNNER_TEMP/implementer-class"
+            exit 0
+          fi
+          if [ "$local_gemma_rc" -eq 0 ]; then
+            echo "local Gemma fallback completed without a diff" >&2
+          else
+            changed && { echo "safe stop: failed local Gemma transaction altered worktree" >&2; exit 1; }
+            if [ "$local_gemma_rc" -eq 69 ]; then
+              echo "local Gemma runtime is unavailable" >&2
+            else
+              echo "local Gemma fallback failed safely" >&2
+            fi
+          fi
+          echo "safe stop: no implementation after Codex primary, Claude fallback, and local Gemma fallback" >&2
           exit 1
       - name: disposable PIANO planner
         id: plan
@@ -394,6 +421,8 @@ jobs:
           outcome=absent
           export CODEX_HOME="$RUNNER_TEMP/codex-plan-home"
           mkdir -p "$CODEX_HOME"; chmod 700 "$CODEX_HOME"
+          cloud_available=false
+          cloud_unavailable=false
           planner_model="${CODEX_PLANNER_MODEL:-gpt-5.6-terra}"
           PLANNER_MODEL="$planner_model" \
             SUPPORTED_MODELS="${SUPPORTED_CODEX_MODELS:-gpt-5.6-sol,gpt-5.6-terra}" python3 - <<'PY'
@@ -405,40 +434,134 @@ jobs:
                   or len(set(supported)) != len(supported) or model not in supported):
               raise SystemExit('safe stop: planner must be an exact configured gpt-* model id')
           PY
-          [ -n "${CODEX_AUTH_B64:-}" ] || { echo "safe stop: Codex planner auth unavailable" >&2; exit 1; }
-          printf '%s' "$CODEX_AUTH_B64" | base64 -d > "$CODEX_HOME/auth.json"; chmod 600 "$CODEX_HOME/auth.json"
+          if [ -n "${CODEX_AUTH_B64:-}" ]; then
+            set +e
+            printf '%s' "$CODEX_AUTH_B64" | base64 -d > "$CODEX_HOME/auth.json"
+            auth_rc=$?
+            set -e
+            if [ "$auth_rc" -eq 0 ] && [ -s "$CODEX_HOME/auth.json" ]; then
+              chmod 600 "$CODEX_HOME/auth.json"
+              cloud_available=true
+            else
+              shred -u "$CODEX_HOME/auth.json" 2>/dev/null || true
+              cloud_unavailable=true
+              echo "Codex planner auth is unavailable; trying pinned local Gemma" >&2
+            fi
+          else
+            cloud_unavailable=true
+            echo "Codex planner auth is unavailable; trying pinned local Gemma" >&2
+          fi
           trap 'shred -u "$CODEX_HOME/auth.json" 2>/dev/null || true' EXIT
-          for attempt in 1 2; do
-            planner=$(mktemp -d "$RUNNER_TEMP/piano-work.XXXXXX")
-            # Source is the disposable job checkout, never host/main workspace. Hooks stay inert.
+          planner_runtime_unavailable() {
+            local planner_exit=$1 planner_output=$2
+            [ "$planner_exit" -eq 124 ] || [ "$planner_exit" -eq 126 ] || \
+              [ "$planner_exit" -eq 127 ] || \
+              PLANNER_LOG="$planner_output" python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path(os.environ['PLANNER_LOG'])
+          try:
+              if not path.is_file() or path.is_symlink() or path.stat().st_size > 8 * 1024 * 1024:
+                  raise SystemExit(1)
+              lines = path.read_text(encoding='utf-8', errors='replace').splitlines()
+          except OSError:
+              raise SystemExit(1)
+          markers = (
+              'rate limit', 'usage limit', 'quota', 'not logged in', 'authentication',
+              'credentials', 'connection refused', 'connection reset', 'connection timed out',
+              'network is unreachable', 'no route to host', 'name or service not known',
+              'temporary failure in name resolution', 'service unavailable', 'bad gateway',
+              'gateway timeout',
+          )
+          for line in lines:
+              try:
+                  event = json.loads(line)
+              except (TypeError, ValueError):
+                  continue
+              if not isinstance(event, dict):
+                  continue
+              message = event.get('message') if event.get('type') == 'error' else None
+              error = event.get('error')
+              if event.get('type') == 'turn.failed' and isinstance(error, dict):
+                  message = error.get('message')
+              if isinstance(message, str) and any(marker in message.lower() for marker in markers):
+                  raise SystemExit(0)
+          raise SystemExit(1)
+          PY
+          }
+          if [ "$cloud_available" = true ]; then
+            for attempt in 1 2; do
+              planner=$(mktemp -d "$RUNNER_TEMP/piano-work.XXXXXX")
+              # Source is the disposable job checkout, never host/main workspace. Hooks stay inert.
+              git -c core.hooksPath=/dev/null clone --no-local work "$planner"
+              planner_log=$(mktemp "$RUNNER_TEMP/piano-cloud-output.XXXXXX")
+              set +e
+              timeout --signal=TERM --kill-after=30s 900s \
+                env -i HOME="$HOME" PATH="$PATH" LANG="${LANG:-C.UTF-8}" \
+                LC_ALL="${LC_ALL:-}" TERM="${TERM:-dumb}" CODEX_HOME="$CODEX_HOME" \
+                codex exec --ephemeral --ignore-user-config --ignore-rules --json \
+                  --sandbox workspace-write -C "$planner" -m "$planner_model" \
+                  -c 'model_reasoning_effort="xhigh"' \
+                  "$(cat "$RUNNER_TEMP/piano-prompt.txt")" >"$planner_log" 2>&1
+              planner_rc=$?
+              set -e
+              if [ "$planner_rc" -ne 0 ]; then
+                if planner_runtime_unavailable "$planner_rc" "$planner_log"; then
+                  cloud_unavailable=true
+                  echo "Codex planner runtime is unavailable; trying pinned local Gemma" >&2
+                  rm -f "$planner_log"
+                  rm -rf "$planner"
+                  break
+                fi
+                rm -f "$planner_log"
+                rm -rf "$planner"
+                exit "$planner_rc"
+              fi
+              rm -f "$planner_log"
+              output=$(python3 "$RUNNER_TEMP/lib/plan_guard.py" --inspect --worktree "$planner")
+              outcome=$(printf '%s\n' "$output" | sed -n 's/^plan=//p')
+              case "$outcome" in
+                valid)
+                  python3 "$RUNNER_TEMP/lib/plan_guard.py" --copy-plan --worktree "$planner" --output "$RUNNER_TEMP/validated-plan.md"
+                  ;;
+                question) outcome=invalid; echo "planner attempted forbidden question output" >&2 ;;
+                absent|invalid|mixed)
+                  echo "planner $planner_model produced $outcome (exit=$planner_rc)"
+                  ;;
+                *) outcome=invalid; echo "unknown planner outcome" >&2 ;;
+              esac
+              rm -rf "$planner"
+              case "$outcome" in valid) break;; esac
+            done
+          fi
+          if [ "$outcome" != valid ] && [ "$cloud_unavailable" = true ]; then
+            planner=$(mktemp -d "$RUNNER_TEMP/piano-local-gemma.XXXXXX")
             git -c core.hooksPath=/dev/null clone --no-local work "$planner"
             set +e
-            env -i HOME="$HOME" PATH="$PATH" LANG="${LANG:-C.UTF-8}" \
-              LC_ALL="${LC_ALL:-}" TERM="${TERM:-dumb}" CODEX_HOME="$CODEX_HOME" \
-              codex exec --sandbox workspace-write -C "$planner" -m "$planner_model" \
-                -c 'model_reasoning_effort="xhigh"' \
-                "$(cat "$RUNNER_TEMP/piano-prompt.txt")" 2>&1 | tail -40
-            planner_rc=${PIPESTATUS[0]}
+            env -i PATH="$PATH" LANG="${LANG:-C.UTF-8}" LC_ALL="${LC_ALL:-}" \
+              TERM="${TERM:-dumb}" RUNNER_TEMP="$RUNNER_TEMP" \
+              python3 "$RUNNER_TEMP/lib/claude_pool.py" --provider local-gemma \
+                --worktree "$planner" --prompt-file "$RUNNER_TEMP/piano-prompt.txt" --timeout-sec 900
+            local_gemma_rc=$?
             set -e
-            if [ "$planner_rc" -ne 0 ]; then
-              rm -rf "$planner"
-              exit "$planner_rc"
+            if [ "$local_gemma_rc" -eq 0 ]; then
+              output=$(python3 "$RUNNER_TEMP/lib/plan_guard.py" --inspect --worktree "$planner")
+              outcome=$(printf '%s\n' "$output" | sed -n 's/^plan=//p')
+              case "$outcome" in
+                valid)
+                  python3 "$RUNNER_TEMP/lib/plan_guard.py" --copy-plan --worktree "$planner" --output "$RUNNER_TEMP/validated-plan.md"
+                  ;;
+                question) outcome=invalid; echo "local Gemma planner attempted forbidden question output" >&2 ;;
+                absent|invalid|mixed)
+                  echo "local Gemma planner produced $outcome (exit=$local_gemma_rc)"
+                  ;;
+                *) outcome=invalid; echo "unknown local Gemma planner outcome" >&2 ;;
+              esac
+            else
+              echo "local Gemma planner failed safely (exit=$local_gemma_rc)" >&2
             fi
-            output=$(python3 "$RUNNER_TEMP/lib/plan_guard.py" --inspect --worktree "$planner")
-            outcome=$(printf '%s\n' "$output" | sed -n 's/^plan=//p')
-            case "$outcome" in
-              valid)
-                python3 "$RUNNER_TEMP/lib/plan_guard.py" --copy-plan --worktree "$planner" --output "$RUNNER_TEMP/validated-plan.md"
-                ;;
-              question) outcome=invalid; echo "planner attempted forbidden question output" >&2 ;;
-              absent|invalid|mixed)
-                echo "planner $planner_model produced $outcome (exit=$planner_rc)"
-                ;;
-              *) outcome=invalid; echo "unknown planner outcome" >&2 ;;
-            esac
             rm -rf "$planner"
-            case "$outcome" in valid) break;; esac
-          done
+          fi
           printf 'plan=%s\nplan_valid=%s\n' "$outcome" "$( [ "$outcome" = valid ] && echo true || echo false )" >> "$GITHUB_OUTPUT"
       - name: plan implementation with bounded ladder
         if: ${{ steps.gate.outputs.proceed == 'true' && steps.gate.outputs.plan == 'true' && steps.plan.outputs.plan == 'valid' }}
@@ -538,11 +661,38 @@ jobs:
               printf 'claude:sonnet\n' > "$RUNNER_TEMP/implementer-class"
               exit 0
             fi
-            [ "$claude_rc" -ne 0 ] || echo "Claude fallback completed without a diff" >&2
+            if [ "$claude_rc" -eq 0 ]; then
+              echo "Claude fallback completed without a diff; using local Gemma fallback" >&2
+            else
+              changed && { echo "safe stop: failed Claude transaction altered worktree" >&2; exit 1; }
+              echo "Claude fallback failed; using local Gemma fallback" >&2
+            fi
           else
-            echo "Claude fallback pool is unavailable" >&2
+            echo "Claude fallback pool is unavailable; using local Gemma fallback" >&2
           fi
-          echo "safe stop: no implementation after Codex primary and Claude fallback" >&2
+          local_gemma_rc=64
+          set +e
+          env -i PATH="$PATH" LANG="${LANG:-C.UTF-8}" LC_ALL="${LC_ALL:-}" \
+            TERM="${TERM:-dumb}" RUNNER_TEMP="$RUNNER_TEMP" \
+            python3 "$RUNNER_TEMP/lib/claude_pool.py" --provider local-gemma \
+              --worktree work --prompt-file "$RUNNER_TEMP/implementation-prompt.txt" --timeout-sec 900
+          local_gemma_rc=$?
+          set -e
+          if [ "$local_gemma_rc" -eq 0 ] && changed; then
+            printf 'local_gemma:gemma-4-26b-a4b\n' > "$RUNNER_TEMP/implementer-class"
+            exit 0
+          fi
+          if [ "$local_gemma_rc" -eq 0 ]; then
+            echo "local Gemma fallback completed without a diff" >&2
+          else
+            changed && { echo "safe stop: failed local Gemma transaction altered worktree" >&2; exit 1; }
+            if [ "$local_gemma_rc" -eq 69 ]; then
+              echo "local Gemma runtime is unavailable" >&2
+            else
+              echo "local Gemma fallback failed safely" >&2
+            fi
+          fi
+          echo "safe stop: no implementation after Codex primary, Claude fallback, and local Gemma fallback" >&2
           exit 1
       - name: unprivileged question protocol inspection
         id: question_inspect
@@ -594,16 +744,23 @@ jobs:
           CODEX_AUTH_B64: ${{ secrets.CODEX_AUTH_JSON }}
           CODEX_REVIEW_MODEL: ${{ vars.CODEX_REVIEW_MODEL }}
           CODEX_FIX_MODEL: ${{ vars.CODEX_FIX_MODEL }}
-          SECOND_REVIEW_MODEL: ${{ vars.SECOND_REVIEW_MODEL }}
           SUPPORTED_CODEX_MODELS: ${{ vars.SUPPORTED_CODEX_MODELS }}
         run: |
           set -euo pipefail
+          umask 077
           review_outcome=failed
           reviewed_head=""
           reviewed_base=""
           review_auth=""
+          review_home=""
           finish_review() {
             [ -z "$review_auth" ] || shred -u "$review_auth" 2>/dev/null || true
+            if [ -n "$review_home" ]; then
+              case "$review_home" in
+                "$RUNNER_TEMP"/codex-review-home.*) rm -rf -- "$review_home" ;;
+                *) echo "safe stop: unexpected reviewer auth path" >&2 ;;
+              esac
+            fi
             printf 'outcome=%s\nreviewed_head=%s\nreviewed_base=%s\n' \
               "$review_outcome" "$reviewed_head" "$reviewed_base" >> "$GITHUB_OUTPUT"
           }
@@ -612,16 +769,19 @@ jobs:
           reviewed_base=$(cat "$RUNNER_TEMP/review-base-sha")
           reviewer="${CODEX_REVIEW_MODEL:-gpt-5.6-terra}"
           fix_model="${CODEX_FIX_MODEL:-gpt-5.6-sol}"
+          local_reviewer="local_ollama:gpt-oss:latest"
+          local_fix="local_gemma:gemma-4-26b-a4b"
           implementer=$(cat "$RUNNER_TEMP/implementer-class" 2>/dev/null || true)
-          second_reviewer="${SECOND_REVIEW_MODEL:-}"
           supported_csv="${SUPPORTED_CODEX_MODELS:-gpt-5.6-sol,gpt-5.6-terra}"
-          IDENTITIES="$reviewer|$fix_model|$implementer|$second_reviewer" \
+          IDENTITIES="$reviewer|$fix_model|$implementer" \
             SUPPORTED_MODELS="$supported_csv" python3 - <<'PY'
           import os, re
-          reviewer, fix_model, implementer, second = os.environ['IDENTITIES'].split('|')
+          reviewer, fix_model, implementer = os.environ['IDENTITIES'].split('|')
           supported = os.environ['SUPPORTED_MODELS'].split(',')
           exact = re.compile(r'gpt-[a-z0-9]+(?:[.-][a-z0-9]+)*').fullmatch
-          external_implementer = re.compile(r'claude:sonnet').fullmatch
+          external_implementer = re.compile(
+              r'(?:claude:sonnet|local_gemma:gemma-4-26b-a4b)'
+          ).fullmatch
           if (not implementer or any(not exact(value) for value in supported)
                   or len(set(supported)) != len(supported)):
               raise SystemExit('safe stop: supported model configuration is invalid')
@@ -629,7 +789,7 @@ jobs:
               raise SystemExit('safe stop: reviewer must be exact gpt-5.6-terra')
           if not external_implementer(implementer) and (
                   not exact(implementer) or implementer not in supported):
-              raise SystemExit('safe stop: implementer identity is not an exact supported Codex or Claude identity')
+              raise SystemExit('safe stop: implementer identity is not an exact supported Codex, Claude, or local Gemma identity')
           for role, value in (('reviewer', reviewer), ('fix model', fix_model)):
               if not exact(value) or value not in supported:
                   raise SystemExit(f'safe stop: {role} must be an exact configured gpt-* model id')
@@ -637,50 +797,83 @@ jobs:
               raise SystemExit('safe stop: reviewer equals implementer')
           if reviewer == fix_model:
               raise SystemExit('safe stop: correction model equals reviewer')
-          if second and (not exact(second) or second not in supported):
-              raise SystemExit('safe stop: SECOND_REVIEW_MODEL must be an exact configured gpt-* model id')
-          if second and (second == reviewer or second in {implementer, fix_model}):
-              raise SystemExit('safe stop: second reviewer must differ from reviewer, implementer and fix model')
           PY
           IFS=',' read -r -a supported_models <<< "$supported_csv"
-          if [ -z "$second_reviewer" ]; then
-            for configured in "${supported_models[@]}"; do
-              if [ "$configured" != "$reviewer" ] && [ "$configured" != "$implementer" ] \
-                  && [ "$configured" != "$fix_model" ]; then
-                second_reviewer=$configured
-                break
-              fi
-            done
-          fi
           supported_args=()
           for configured in "${supported_models[@]}"; do
             supported_args+=(--supported-model "$configured")
           done
-          [ -n "${CODEX_AUTH_B64:-}" ] || { echo "safe stop: Codex reviewer auth unavailable" >&2; exit 2; }
-          export CODEX_HOME="$RUNNER_TEMP/codex-review-home"
-          mkdir -p "$CODEX_HOME"; chmod 700 "$CODEX_HOME"
-          printf '%s' "$CODEX_AUTH_B64" | base64 -d > "$CODEX_HOME/auth.json"; chmod 600 "$CODEX_HOME/auth.json"
-          review_auth="$CODEX_HOME/auth.json"
+          cloud_reviewer_available=false
+          if [ -n "${CODEX_AUTH_B64:-}" ]; then
+            set +e
+            review_home=$(mktemp -d "$RUNNER_TEMP/codex-review-home.XXXXXX")
+            auth_rc=$?
+            if [ "$auth_rc" -eq 0 ]; then
+              chmod 700 "$review_home"
+              printf '%s' "$CODEX_AUTH_B64" | base64 -d > "$review_home/auth.json"
+              auth_rc=$?
+              if [ "$auth_rc" -eq 0 ] && [ -s "$review_home/auth.json" ]; then
+                chmod 600 "$review_home/auth.json"
+                review_auth="$review_home/auth.json"
+              else
+                auth_rc=1
+              fi
+            fi
+            set -e
+            if [ "$auth_rc" -eq 0 ]; then
+              cloud_reviewer_available=true
+            else
+              [ -z "$review_auth" ] || shred -u "$review_auth" 2>/dev/null || true
+              review_auth=""
+              echo "cloud reviewer auth unavailable; using the pinned local reviewer" >&2
+            fi
+          else
+            echo "cloud reviewer auth unavailable; using the pinned local reviewer" >&2
+          fi
           current_implementer="$implementer"
           for correction in 0 1 2; do
-            review_args=(--repo . --base "$reviewed_base" --head HEAD
+            common_review_args=(--repo . --base "$reviewed_base" --head HEAD
               --requirements-file "$RUNNER_TEMP/review-requirements.txt"
               --comment-output "$RUNNER_TEMP/review-comment.md"
-              --model "$reviewer" --implementer-model "$current_implementer"
-              --fix-model "$fix_model" --effort xhigh --second-effort xhigh
+              --feedback-output "$RUNNER_TEMP/review-feedback.md"
+              --implementer-model "$current_implementer"
+              --effort xhigh --second-effort xhigh
               --allow-protected-auto)
-            if [ -n "$second_reviewer" ]; then
-              review_args+=(--second-model "$second_reviewer")
+            review_lane=local
+            verdict=69
+            if [ "$cloud_reviewer_available" = true ]; then
+              review_lane=cloud
+              set +e
+              env -i HOME="$HOME" PATH="$PATH" LANG="${LANG:-C.UTF-8}" \
+                LC_ALL="${LC_ALL:-}" TERM="${TERM:-dumb}" CODEX_HOME="$review_home" \
+                python3 "$RUNNER_TEMP/lib/review_gate.py" \
+                  "${common_review_args[@]}" --model "$reviewer" \
+                  --second-model "$local_reviewer" --fix-model "$fix_model" \
+                  "${supported_args[@]}" > "$RUNNER_TEMP/review-log.txt" 2>&1
+              verdict=$?
+              set -e
+              if [ "$verdict" -eq 69 ]; then
+                cloud_reviewer_available=false
+                [ -z "$review_auth" ] || shred -u "$review_auth" 2>/dev/null || true
+                review_auth=""
+                echo "authenticated cloud reviewer unavailable; using the pinned local reviewer" >&2
+              fi
             fi
-            set +e
-            env -i HOME="$HOME" PATH="$PATH" LANG="${LANG:-C.UTF-8}" \
-              LC_ALL="${LC_ALL:-}" TERM="${TERM:-dumb}" CODEX_HOME="$CODEX_HOME" \
-              python3 "$RUNNER_TEMP/lib/review_gate.py" "${review_args[@]}" \
-                "${supported_args[@]}" | tee "$RUNNER_TEMP/review-log.txt"
-            verdict=${PIPESTATUS[0]}
-            set -e
+            if [ "$cloud_reviewer_available" != true ] && [ "$verdict" -eq 69 ]; then
+              review_lane=local
+              set +e
+              env -i HOME="$HOME" PATH="$PATH" LANG="${LANG:-C.UTF-8}" \
+                LC_ALL="${LC_ALL:-}" TERM="${TERM:-dumb}" \
+                python3 "$RUNNER_TEMP/lib/review_gate.py" \
+                  "${common_review_args[@]}" --model "$local_reviewer" \
+                  --fix-model "$local_fix" "${supported_args[@]}" \
+                  > "$RUNNER_TEMP/review-log.txt" 2>&1
+              verdict=$?
+              set -e
+            fi
             reviewed_head=$(git -c core.hooksPath=/dev/null rev-parse --verify 'HEAD^{commit}')
             if [ "$verdict" -eq 0 ]; then
+              echo "independent $review_lane review approved the exact candidate"
               review_outcome=approved
               break
             fi
@@ -699,17 +892,35 @@ jobs:
               echo "Verifica nel repository, modifica solo quanto necessario e non usare rete."
               echo "Se manca un dato indispensabile, non modificare file tracciati: crea solo .agent-question.md, legato alla generazione autenticata dal publisher."
               echo "Formato esclusivo: una riga DOMANDA: <testo>; OPPURE una-tre righe CONTESTO: <testo>. Mai mescolare DOMANDA e CONTESTO. Massimo 500 caratteri."
-              python3 "$RUNNER_TEMP/lib/fence.py" "$RUNNER_TEMP/review-comment.md"
+              python3 "$RUNNER_TEMP/lib/fence.py" "$RUNNER_TEMP/review-feedback.md"
             } > "$RUNNER_TEMP/review-fix-prompt.txt"
             git -c core.hooksPath=/dev/null status --porcelain=v1 -z > "$RUNNER_TEMP/fix-before"
-            set +e
-            env -i HOME="$HOME" PATH="$PATH" LANG="${LANG:-C.UTF-8}" \
-              LC_ALL="${LC_ALL:-}" TERM="${TERM:-dumb}" CODEX_HOME="$CODEX_HOME" \
-              codex exec --sandbox workspace-write -C . -m "$fix_model" \
-                -c 'model_reasoning_effort="ultra"' \
-                "$(cat "$RUNNER_TEMP/review-fix-prompt.txt")" 2>&1 | tail -40
-            fix_rc=${PIPESTATUS[0]}
-            set -e
+            fix_rc=69
+            fix_identity="$local_fix"
+            if [ "$review_lane" = cloud ] && [ "$cloud_reviewer_available" = true ]; then
+              set +e
+              env -i HOME="$HOME" PATH="$PATH" LANG="${LANG:-C.UTF-8}" \
+                LC_ALL="${LC_ALL:-}" TERM="${TERM:-dumb}" RUNNER_TEMP="$RUNNER_TEMP" \
+                CODEX_HOME="$review_home" CODEX_PRIMARY_MODEL="$fix_model" \
+                SUPPORTED_CODEX_MODELS="$supported_csv" \
+                python3 "$RUNNER_TEMP/lib/claude_pool.py" --provider codex \
+                  --worktree . --prompt-file "$RUNNER_TEMP/review-fix-prompt.txt" \
+                  --timeout-sec 900
+              fix_rc=$?
+              set -e
+              fix_identity="$fix_model"
+            fi
+            if [ "$fix_rc" -eq 69 ]; then
+              set +e
+              env -i PATH="$PATH" LANG="${LANG:-C.UTF-8}" LC_ALL="${LC_ALL:-}" \
+                TERM="${TERM:-dumb}" RUNNER_TEMP="$RUNNER_TEMP" \
+                python3 "$RUNNER_TEMP/lib/claude_pool.py" --provider local-gemma \
+                  --worktree . --prompt-file "$RUNNER_TEMP/review-fix-prompt.txt" \
+                  --timeout-sec 900
+              fix_rc=$?
+              set -e
+              fix_identity="$local_fix"
+            fi
             if [ "$fix_rc" -ne 0 ]; then
               echo "review correction failed (exit=$fix_rc); partial files are not accepted" >&2
               review_outcome=failed
@@ -732,8 +943,8 @@ jobs:
             python3 "$RUNNER_TEMP/lib/egress_gate.py" --repo . --base "$reviewed_base" --head HEAD \
               --title "Agent #${{ github.event.issue.number }}" \
               --body "Ticket #${{ github.event.issue.number }} — modifiche automatiche, vedi diff."
-            current_implementer="$fix_model"
-            printf '%s\n' "$fix_model" > "$RUNNER_TEMP/implementer-class"
+            current_implementer="$fix_identity"
+            printf '%s\n' "$fix_identity" > "$RUNNER_TEMP/implementer-class"
           done
       - name: post-review question protocol inspection
         id: question_final

@@ -8,9 +8,11 @@ bounded git patch plus bounded new regular files is promoted.  Provider output,
 credentials, and pool/account identifiers are never emitted.
 
 For the Codex provider, exit 0 means a diff was promoted and exit 3 means both
-passes produced no diff.  For Claude, exit 0 means the provider completed
-(possibly without a promotable diff), while exit 75 means every configured
-account returned a structured capacity/auth failure.
+passes produced no diff.  The local Gemma provider makes one bounded attempt:
+exit 3 means no diff and exit 69 means its CLI or local endpoint was unavailable.
+For Claude, exit 0 means the provider completed (possibly without a promotable
+diff), while exit 75 means every configured account returned a structured
+capacity/auth failure.
 """
 from __future__ import annotations
 
@@ -37,10 +39,16 @@ EXHAUSTED = 75
 TIMEOUT = 124
 OUTPUT_LIMIT = 125
 NO_CHANGE = 3
+UNAVAILABLE = 69
 KEY = re.compile(r"^[0-9a-f]{12}$")
 MODEL = "sonnet"
 CODEX_MODEL = "gpt-5.6-sol"
 CODEX_MODEL_ID = re.compile(r"^gpt-[a-z0-9]+(?:[.-][a-z0-9]+)*$")
+LOCAL_GEMMA_PROVIDER_CLI = "local-gemma"
+LOCAL_GEMMA_PROVIDER_ID = "local_gemma"
+LOCAL_GEMMA_ENDPOINT = "http://10.200.180.56:8009/v1"
+LOCAL_GEMMA_MODEL = "gemma-4-26b-a4b"
+LOCAL_GEMMA_IDENTITY = f"{LOCAL_GEMMA_PROVIDER_ID}:{LOCAL_GEMMA_MODEL}"
 TOOLS = ("Read", "Edit", "Write", "Glob", "Grep")
 DISALLOWED_TOOLS = (
     "Bash",
@@ -59,7 +67,13 @@ SAFE_PARENT_ENV = (
     "TERM",
 )
 RETRYABLE_ERRORS = {"rate_limit", "authentication_failed"}
-PROTECTED_SCAFFOLDS = (".issue-assets", ".issue-raw.txt", ".issue-prompt.txt")
+PROTECTED_SCAFFOLDS = (
+    ".issue-assets",
+    ".issue-raw.txt",
+    ".issue-prompt.txt",
+    ".context",
+    ".standards",
+)
 MAX_POOL_BYTES = 1024 * 1024
 MAX_POOL_ACCOUNTS = 32
 MAX_TOKEN_BYTES = 16 * 1024
@@ -89,6 +103,13 @@ class Baseline(NamedTuple):
 class CodexAttemptResult(NamedTuple):
     returncode: int
     no_change: bool = False
+    unavailable: bool = False
+
+
+class LocalGemmaAttemptResult(NamedTuple):
+    returncode: int
+    no_change: bool = False
+    unavailable: bool = False
 
 
 def _retryable_cli_failure(output: bytes) -> bool:
@@ -143,6 +164,81 @@ def _successful_cli_result(output: bytes) -> bool:
         event.get("isApiErrorMessage") is True or event.get("type") == "error"
         for event in events
     )
+
+
+def _local_gemma_runtime_unavailable(returncode: int, output: bytes) -> bool:
+    """Accept fallback only for a Codex runtime/transport error event.
+
+    Provider/model text is untrusted.  A generic non-zero exit therefore remains
+    a provider failure; only Codex's JSON ``error`` events with a narrow transport
+    signature, plus exec-loader failures, may be classified as unavailable.
+    """
+    if returncode in (126, 127):
+        return True
+    runtime_markers = (
+        "connection refused",
+        "connection reset",
+        "connection timed out",
+        "network is unreachable",
+        "no route to host",
+        "name or service not known",
+        "temporary failure in name resolution",
+        "dns lookup failed",
+        "service unavailable",
+        "bad gateway",
+        "gateway timeout",
+        "http status 502",
+        "http status 503",
+        "http status 504",
+    )
+    for line in output.decode("utf-8", "replace").splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict) or event.get("type") != "error":
+            continue
+        message = event.get("message")
+        if isinstance(message, str) and any(marker in message.lower() for marker in runtime_markers):
+            return True
+    return False
+
+
+def _codex_runtime_unavailable(returncode: int, output: bytes) -> bool:
+    """Classify only Codex-owned JSON error events as auth/capacity/transport loss."""
+    if returncode in (126, 127):
+        return True
+    markers = (
+        "rate limit",
+        "usage limit",
+        "quota",
+        "not logged in",
+        "authentication",
+        "credentials",
+        "connection refused",
+        "connection reset",
+        "connection timed out",
+        "network is unreachable",
+        "no route to host",
+        "name or service not known",
+        "temporary failure in name resolution",
+        "service unavailable",
+        "bad gateway",
+        "gateway timeout",
+    )
+    for line in output.decode("utf-8", "replace").splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        message = event.get("message") if event.get("type") == "error" else None
+        if event.get("type") == "turn.failed" and isinstance(event.get("error"), dict):
+            message = event["error"].get("message")
+        if isinstance(message, str) and any(marker in message.lower() for marker in markers):
+            return True
+    return False
 
 
 def _pool(environ: Mapping[str, str]) -> list[str]:
@@ -1043,6 +1139,7 @@ def _codex_command(
         "workspace-write",
         "--color",
         "never",
+        "--json",
         "-C",
         str(sandbox),
         "-c",
@@ -1096,7 +1193,10 @@ def _run_codex_attempt(
             if overflow:
                 return CodexAttemptResult(OUTPUT_LIMIT)
             if returncode != 0:
-                return CodexAttemptResult(returncode or 1)
+                return CodexAttemptResult(
+                    returncode or 1,
+                    unavailable=_codex_runtime_unavailable(returncode or 1, _output),
+                )
             try:
                 promoted = _promote(
                     worktree,
@@ -1111,6 +1211,119 @@ def _run_codex_attempt(
             return CodexAttemptResult(0, no_change=not promoted)
     except subprocess.TimeoutExpired:
         return CodexAttemptResult(TIMEOUT)
+
+
+def _local_gemma_command(
+    environ: Mapping[str, str],
+    sandbox: Path,
+) -> list[str]:
+    """Build the closed, literal-only local provider invocation."""
+    search_path = environ.get("PATH") or "/usr/local/bin:/usr/bin:/bin"
+    codex = shutil.which("codex", path=search_path)
+    if not codex:
+        raise FileNotFoundError("codex")
+    provider = f"model_providers.{LOCAL_GEMMA_PROVIDER_ID}"
+    return [
+        codex,
+        "exec",
+        "--ephemeral",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--sandbox",
+        "workspace-write",
+        "--color",
+        "never",
+        "--json",
+        "-c",
+        f'model_provider="{LOCAL_GEMMA_PROVIDER_ID}"',
+        "-c",
+        f'{provider}.name="{LOCAL_GEMMA_PROVIDER_CLI}"',
+        "-c",
+        f'{provider}.base_url="{LOCAL_GEMMA_ENDPOINT}"',
+        "-c",
+        f'{provider}.wire_api="responses"',
+        "-c",
+        f"{provider}.requires_openai_auth=false",
+        "-c",
+        f"{provider}.request_max_retries=0",
+        "-c",
+        f"{provider}.stream_max_retries=0",
+        "-C",
+        str(sandbox),
+        "-m",
+        LOCAL_GEMMA_MODEL,
+        "-",
+    ]
+
+
+def _run_local_gemma_attempt(
+    prompt: bytes,
+    worktree: str,
+    prompt_file: str,
+    deadline: float,
+    environ: Mapping[str, str],
+) -> LocalGemmaAttemptResult:
+    temp_parent = environ.get("RUNNER_TEMP") or None
+    if temp_parent is not None and not os.path.isdir(temp_parent):
+        raise PoolError("RUNNER_TEMP is not a directory")
+    try:
+        with tempfile.TemporaryDirectory(prefix=".local-gemma-implementer.", dir=temp_parent) as raw_root:
+            root = Path(raw_root)
+            root.chmod(0o700)
+            git_env = _git_env(environ, root)
+            baseline = _baseline(worktree, prompt_file, git_env, deadline)
+            sandbox = root / "candidate"
+            _prepare_clone(worktree, sandbox, baseline, git_env, deadline)
+            private_home = root / "home"
+            private_codex_home = root / "codex-home"
+            private_home.mkdir(mode=0o700)
+            private_codex_home.mkdir(mode=0o700)
+            prompt_path = root / "prompt.txt"
+            fd = os.open(prompt_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(prompt)
+            child_env = _codex_child_env(
+                environ,
+                str(private_codex_home),
+                str(private_home),
+            )
+            with prompt_path.open("rb") as prompt_handle:
+                try:
+                    process = subprocess.Popen(
+                        _local_gemma_command(environ, sandbox),
+                        cwd=str(root),
+                        env=child_env,
+                        stdin=prompt_handle,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        start_new_session=True,
+                    )
+                except OSError:
+                    return LocalGemmaAttemptResult(UNAVAILABLE, unavailable=True)
+                returncode, output, timed_out, overflow = _capture_process(process, deadline)
+            if timed_out:
+                return LocalGemmaAttemptResult(UNAVAILABLE, unavailable=True)
+            if overflow:
+                return LocalGemmaAttemptResult(OUTPUT_LIMIT)
+            if returncode != 0:
+                return LocalGemmaAttemptResult(
+                    returncode or 1,
+                    unavailable=_local_gemma_runtime_unavailable(returncode or 1, output),
+                )
+            try:
+                promoted = _promote(
+                    worktree,
+                    str(sandbox),
+                    baseline,
+                    git_env,
+                    deadline,
+                    root,
+                )
+            except PoolError:
+                return LocalGemmaAttemptResult(1)
+            return LocalGemmaAttemptResult(0, no_change=not promoted)
+    except subprocess.TimeoutExpired:
+        return LocalGemmaAttemptResult(UNAVAILABLE, unavailable=True)
 
 
 def run_codex(
@@ -1154,6 +1367,9 @@ def run_codex(
         if returncode == 0:
             print("claude_pool: Codex Sol transaction completed", file=sys.stderr)
             return 0
+        if outcome.unavailable:
+            print("claude_pool: Codex Sol runtime unavailable", file=sys.stderr)
+            return UNAVAILABLE
         if returncode == TIMEOUT:
             print("claude_pool: Codex Sol transaction timed out safely", file=sys.stderr)
         elif returncode == OUTPUT_LIMIT:
@@ -1162,6 +1378,41 @@ def run_codex(
             print("claude_pool: Codex Sol failed safely", file=sys.stderr)
         return returncode or 1
     return NO_CHANGE
+
+
+def run_local_gemma(
+    worktree: str,
+    prompt_file: str,
+    *,
+    timeout_sec: int,
+    environ: Mapping[str, str] | None = None,
+) -> int:
+    """Run one local, unauthenticated Gemma transaction with no configuration inputs."""
+    env = dict(os.environ if environ is None else environ)
+    timeout = _bounded_int(timeout_sec, MIN_TIMEOUT_SEC, MAX_TIMEOUT_SEC, "timeout")
+    prompt, prompt_path = _regular_prompt(prompt_file)
+    directory = _worktree(worktree)
+    outcome = _run_local_gemma_attempt(
+        prompt,
+        directory,
+        prompt_path,
+        time.monotonic() + timeout,
+        env,
+    )
+    if outcome.returncode == 0:
+        if outcome.no_change:
+            print("claude_pool: local Gemma produced no diff", file=sys.stderr)
+            return NO_CHANGE
+        print("claude_pool: local Gemma transaction completed", file=sys.stderr)
+        return 0
+    if outcome.unavailable:
+        print("claude_pool: local Gemma runtime unavailable", file=sys.stderr)
+        return UNAVAILABLE
+    if outcome.returncode == OUTPUT_LIMIT:
+        print("claude_pool: local Gemma output exceeded bounded limit", file=sys.stderr)
+    else:
+        print("claude_pool: local Gemma failed safely", file=sys.stderr)
+    return outcome.returncode or 1
 
 
 def run(
@@ -1209,7 +1460,11 @@ def run(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--provider", choices=("codex", "claude"), required=True)
+    parser.add_argument(
+        "--provider",
+        choices=("codex", "claude", LOCAL_GEMMA_PROVIDER_CLI),
+        required=True,
+    )
     parser.add_argument("--worktree", required=True)
     parser.add_argument("--prompt-file", required=True)
     parser.add_argument("--max-turns", type=int, default=30)
@@ -1218,6 +1473,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.provider == "codex":
             return run_codex(
+                args.worktree,
+                args.prompt_file,
+                timeout_sec=args.timeout_sec,
+            )
+        if args.provider == LOCAL_GEMMA_PROVIDER_CLI:
+            return run_local_gemma(
                 args.worktree,
                 args.prompt_file,
                 timeout_sec=args.timeout_sec,
