@@ -411,11 +411,14 @@ def main() -> None:
         except (OSError, UnicodeError, QuestionError) as exc:
             raise TransitionError(f"question unexpectedly invalid: {exc}") from exc
         if _counter_requires_human(current_names):
-            _mutation_transition(root, repo, issue, headers, initial, keep | {"needs-human"})
+            # Full-auto installations never wait for an approval gate.  A third
+            # question (or a corrupt answer counter) is a bounded protocol
+            # failure, so publish the ordinary retryable terminal state.
+            _mutation_transition(root, repo, issue, headers, initial, keep | {"ai:failed"})
             login, numeric_id = os.environ.get("AGENT_BOT_LOGIN", ""), os.environ.get("AGENT_BOT_ID", "")
             if not _terminal_comment_posted_by_exact_bot(
-                    _comments(root, repo, issue, headers), "needs-human", login, numeric_id):
-                _post_comment(root, repo, issue, headers, _terminal_comment("needs-human"))
+                    _comments(root, repo, issue, headers), "failed", login, numeric_id):
+                _post_comment(root, repo, issue, headers, _terminal_comment("failed"))
             return
         # First make the label transition durable.  The answer-agent sweep owns
         # recovery if a crash leaves this label without the exact marker below.
