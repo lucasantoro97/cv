@@ -79,13 +79,39 @@ MAX_REVIEW_OUTPUT_BYTES = 1024 * 1024
 MAX_LOCAL_REQUEST_BYTES = 512 * 1024
 MAX_LOCAL_RESPONSE_BYTES = 64 * 1024
 MAX_LOCAL_PROMPT_BYTES = 24 * 1024
-LOCAL_MAX_OUTPUT_TOKENS = 512
+# gpt-oss accounts for hidden reasoning inside ``max_output_tokens``.  A 512
+# token envelope was enough for a trivial prompt but could consume the entire
+# budget before emitting the structured answer on a real Office review.  Keep
+# the native non-reasoning chat lane small, and give the Responses lane one
+# still-bounded envelope with explicitly low reasoning effort.
+LOCAL_RESPONSES_MAX_OUTPUT_TOKENS = 2048
+LOCAL_CHAT_MAX_OUTPUT_TOKENS = 512
+LOCAL_RESPONSES_REASONING_EFFORT = "low"
 LOCAL_HTTP_TIMEOUT_SECONDS = 240
 REVIEW_TIMEOUT_SECONDS = 900
 MIN_REVIEW_TIMEOUT_SECONDS = 5
 MAX_REVIEW_TIMEOUT_SECONDS = 900
 REVIEWER_UNAVAILABLE = 69
 RETRYABLE_LOCAL_HTTP_STATUSES = {408, 429, 500, 502, 503, 504}
+
+LOCAL_REVIEW_INSTRUCTIONS = (
+    "Return only the JSON object required by the response schema. "
+    "Set verdict to APPROVA or RIFIUTA. APPROVA requires an empty findings array; "
+    "RIFIUTA requires one to eight short concrete findings in Italian."
+)
+LOCAL_REVIEW_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "verdict": {"type": "string", "enum": ["APPROVA", "RIFIUTA"]},
+        "findings": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {"type": "string", "minLength": 1, "maxLength": 1000},
+        },
+    },
+    "required": ["verdict", "findings"],
+}
 
 
 class LocalReviewerUnavailable(RuntimeError):
@@ -139,16 +165,45 @@ def protected_hits(paths: list[str]) -> list[str]:
     return [path for path in paths if any(regex.search(path) for regex in PROTECTED)]
 
 
+def _line_verdict(line: str) -> str | None:
+    """Read one canonical verdict line, allowing only symmetric bold wrapping."""
+    candidate = line.strip()
+    if candidate.startswith("**") and candidate.endswith("**") and len(candidate) > 4:
+        candidate = candidate[2:-2].strip()
+    match = VERDICT.fullmatch(candidate)
+    return match.group(1) if match else None
+
+
 def read_verdict(text: str) -> str | None:
     """Accept one exact final line, optionally wrapped in symmetric Markdown bold."""
     lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    return _line_verdict(lines[-1]) if lines else None
+
+
+def normalize_reviewer_verdict(text: str) -> tuple[str, list[str]]:
+    """Convert a final-line reviewer reply to the only trusted verdict contract.
+
+    The local Ollama Responses endpoint has a bounded message envelope, but no
+    locally-proven response-schema guarantee.  Treat its prose as untrusted:
+    only a single final canonical verdict is control data.  An approval carries
+    no findings regardless of preceding explanation; a rejection preserves
+    bounded preceding lines solely as untrusted correction context.
+    """
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
     if not lines:
-        return None
-    final = lines[-1]
-    if final.startswith("**") and final.endswith("**") and len(final) > 4:
-        final = final[2:-2].strip()
-    match = VERDICT.fullmatch(final)
-    return match.group(1) if match else None
+        raise ValueError("local reviewer verdict is missing or malformed")
+    verdict = _line_verdict(lines[-1])
+    if verdict not in {"APPROVA", "RIFIUTA"}:
+        raise ValueError("local reviewer final verdict line is malformed")
+    if any(_line_verdict(line) is not None for line in lines[:-1]):
+        raise ValueError("local reviewer output contains ambiguous verdicts")
+    if verdict == "APPROVA":
+        # Do not turn model reasoning into a positive finding or evidence.
+        return verdict, []
+    findings = [line[:1000] for line in lines[:-1]][:8]
+    if not findings:
+        raise ValueError("local rejection has no concrete finding")
+    return verdict, findings
 
 
 def reviewer_message(event_stream: str) -> str:
@@ -372,7 +427,13 @@ def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
 
 
 def _local_response_text(raw: bytes, expected_model: str) -> str:
-    """Parse completed Responses output without treating reasoning as a verdict."""
+    """Parse one completed, schema-constrained Responses review.
+
+    Reasoning is never treated as review output.  The assistant message must be
+    the exact closed JSON object requested by ``LOCAL_REVIEW_SCHEMA``; convert
+    it to the existing canonical line protocol only after strict validation so
+    callers do not need a second, weaker parser.
+    """
     document = _local_json(raw)
     if document.get("object") != "response":
         raise ValueError("local reviewer returned an invalid response object")
@@ -394,7 +455,39 @@ def _local_response_text(raw: bytes, expected_model: str) -> str:
         ):
             raise ValueError("local reviewer returned an invalid reasoning item")
     message = output[-1]
-    return _responses_message_text(message)
+    return _structured_local_review(_responses_message_text(message))
+
+
+def _structured_local_review(text: str) -> str:
+    """Validate closed local-review JSON and return canonical reviewer text."""
+    document = _local_json(text.encode("utf-8"))
+    if set(document) != {"verdict", "findings"}:
+        raise ValueError("local reviewer returned an invalid review object")
+    verdict = document.get("verdict")
+    findings = document.get("findings")
+    if verdict not in {"APPROVA", "RIFIUTA"} or not isinstance(findings, list):
+        raise ValueError("local reviewer returned an invalid review verdict")
+    if len(findings) > 8:
+        raise ValueError("local reviewer returned too many findings")
+    for finding in findings:
+        if (
+            not isinstance(finding, str)
+            or finding != finding.strip()
+            or not finding
+            or "\n" in finding
+            or "\r" in finding
+            or len(finding) > 1000
+            or len(finding.encode("utf-8")) > 1000
+            or _line_verdict(finding) is not None
+        ):
+            raise ValueError("local reviewer returned an invalid finding")
+    if verdict == "APPROVA":
+        if findings:
+            raise ValueError("local approval must not contain findings")
+        return "VERDETTO: APPROVA\n"
+    if not findings:
+        raise ValueError("local rejection has no concrete finding")
+    return "\n".join([*findings, "VERDETTO: RIFIUTA"]) + "\n"
 
 
 def _local_json(raw: bytes) -> dict[str, object]:
@@ -538,10 +631,20 @@ def _run_local_reviewer(
     if identity == LOCAL_RESPONSES_REVIEWER_ID:
         path = LOCAL_RESPONSES_PATH
         request = {
+            "instructions": LOCAL_REVIEW_INSTRUCTIONS,
             "input": prompt,
-            "max_output_tokens": LOCAL_MAX_OUTPUT_TOKENS,
+            "max_output_tokens": LOCAL_RESPONSES_MAX_OUTPUT_TOKENS,
             "model": model,
+            "reasoning": {"effort": LOCAL_RESPONSES_REASONING_EFFORT},
             "stream": False,
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "review_verdict",
+                    "strict": True,
+                    "schema": LOCAL_REVIEW_SCHEMA,
+                }
+            },
         }
         parser = _local_response_text
     elif identity == LOCAL_CHAT_REVIEWER_ID:
@@ -551,7 +654,7 @@ def _run_local_reviewer(
             "model": model,
             "options": {
                 "num_ctx": 8192,
-                "num_predict": LOCAL_MAX_OUTPUT_TOKENS,
+                "num_predict": LOCAL_CHAT_MAX_OUTPUT_TOKENS,
                 "temperature": 0,
             },
             "stream": False,
