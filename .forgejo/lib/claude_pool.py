@@ -86,6 +86,11 @@ class Baseline(NamedTuple):
     protected_digest: str
 
 
+class CodexAttemptResult(NamedTuple):
+    returncode: int
+    no_change: bool = False
+
+
 def _retryable_cli_failure(output: bytes) -> bool:
     """Trust only provider-owned API error fields from Claude stream-json events."""
     for line in output.decode("utf-8", "replace").splitlines():
@@ -1056,7 +1061,7 @@ def _run_codex_attempt(
     codex_home: str,
     deadline: float,
     environ: Mapping[str, str],
-) -> int:
+) -> CodexAttemptResult:
     temp_parent = environ.get("RUNNER_TEMP") or None
     if temp_parent is not None and not os.path.isdir(temp_parent):
         raise PoolError("RUNNER_TEMP is not a directory")
@@ -1087,11 +1092,11 @@ def _run_codex_attempt(
                 )
                 returncode, _output, timed_out, overflow = _capture_process(process, deadline)
             if timed_out:
-                return TIMEOUT
+                return CodexAttemptResult(TIMEOUT)
             if overflow:
-                return OUTPUT_LIMIT
+                return CodexAttemptResult(OUTPUT_LIMIT)
             if returncode != 0:
-                return returncode or 1
+                return CodexAttemptResult(returncode or 1)
             try:
                 promoted = _promote(
                     worktree,
@@ -1102,10 +1107,10 @@ def _run_codex_attempt(
                     root,
                 )
             except PoolError:
-                return 1
-            return 0 if promoted else NO_CHANGE
+                return CodexAttemptResult(1)
+            return CodexAttemptResult(0, no_change=not promoted)
     except subprocess.TimeoutExpired:
-        return TIMEOUT
+        return CodexAttemptResult(TIMEOUT)
 
 
 def run_codex(
@@ -1130,7 +1135,7 @@ def run_codex(
     if len(retry_prompt) > MAX_PROMPT_BYTES:
         retry_prompt = prompt
     for attempt, attempt_prompt in enumerate((prompt, retry_prompt), start=1):
-        returncode = _run_codex_attempt(
+        outcome = _run_codex_attempt(
             attempt_prompt,
             directory,
             prompt_path,
@@ -1139,15 +1144,16 @@ def run_codex(
             deadline,
             env,
         )
-        if returncode == 0:
-            print("claude_pool: Codex Sol transaction completed", file=sys.stderr)
-            return 0
-        if returncode == NO_CHANGE:
+        if outcome.returncode == 0 and outcome.no_change:
             if attempt == 1:
                 print("claude_pool: Codex Sol produced no diff; retrying", file=sys.stderr)
                 continue
             print("claude_pool: Codex Sol produced no diff after two passes", file=sys.stderr)
             return NO_CHANGE
+        returncode = outcome.returncode
+        if returncode == 0:
+            print("claude_pool: Codex Sol transaction completed", file=sys.stderr)
+            return 0
         if returncode == TIMEOUT:
             print("claude_pool: Codex Sol transaction timed out safely", file=sys.stderr)
         elif returncode == OUTPUT_LIMIT:
