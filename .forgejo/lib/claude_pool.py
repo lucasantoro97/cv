@@ -395,6 +395,23 @@ def _under(path: str, roots: tuple[str, ...]) -> bool:
     return any(path == root or path.startswith(f"{root}/") for root in roots)
 
 
+def _protected_candidate_path(path: str, roots: tuple[str, ...]) -> bool:
+    """Recognize a path inside a protected root without making it promotable.
+
+    Protected scaffolds may legitimately contain a nested Git checkout (for
+    example ``.standards/.git``).  Such paths must be ignored by candidate
+    discovery because the whole scaffold is copied only for read access and is
+    never promoted.  Unsafe traversal/absolute forms deliberately return false
+    so the normal strict path validator still rejects them.
+    """
+    if not path or "\x00" in path or path.startswith("/"):
+        return False
+    pure = PurePosixPath(path)
+    if any(part in ("", ".", "..") for part in pure.parts):
+        return False
+    return _under(pure.as_posix(), roots)
+
+
 def _hash_node(
     root: Path,
     relative: str,
@@ -888,7 +905,10 @@ def _candidate_paths(
         for entry in os.scandir(directory):
             if not prefix and entry.name == ".git":
                 continue
-            relative = _safe_relative(f"{prefix}/{entry.name}".lstrip("/"))
+            raw_relative = f"{prefix}/{entry.name}".lstrip("/")
+            if _protected_candidate_path(raw_relative, baseline.protected):
+                continue
+            relative = _safe_relative(raw_relative)
             info = entry.stat(follow_symlinks=False)
             if stat.S_ISDIR(info.st_mode):
                 reject_untracked_specials(Path(entry.path), relative)
@@ -930,11 +950,15 @@ def _candidate_paths(
         "--exclude-standard",
         "-z",
     ).stdout
-    new = tuple(
-        _safe_relative(os.fsdecode(value))
-        for value in new_raw.split(b"\0")
-        if value and not _under(_safe_relative(os.fsdecode(value)), baseline.protected)
-    )
+    new_paths: list[str] = []
+    for value in new_raw.split(b"\0"):
+        if not value:
+            continue
+        raw_path = os.fsdecode(value)
+        if _protected_candidate_path(raw_path, baseline.protected):
+            continue
+        new_paths.append(_safe_relative(raw_path))
+    new = tuple(new_paths)
     if any(_under(path, baseline.protected) for path in changed):
         raise PoolError("Claude attempted to modify protected scaffold")
     if len(set(changed + new)) != len(changed + new):
