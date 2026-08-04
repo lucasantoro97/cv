@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Run the generic implementer through a closed, transactional Claude pool.
+"""Run generic implementers through closed, transactional provider lanes.
 
-Every account runs in a fresh local clone inside a bubblewrap filesystem
-namespace.  The namespace exposes only that clone, a private HOME, the runtime,
-and the minimum TLS/DNS files needed by the provider.  Failed attempts are
-discarded; a successful attempt is promoted as a bounded git patch plus bounded
-new regular files.  Provider output and pool/account identifiers are never
-emitted.
+Codex Sol runs first and every pass gets a fresh local clone.  Claude fallback
+accounts also run in fresh clones, additionally inside a bubblewrap filesystem
+namespace.  Failed and no-change attempts are discarded; only a successful
+bounded git patch plus bounded new regular files is promoted.  Provider output,
+credentials, and pool/account identifiers are never emitted.
 
-Exit 0 means Claude completed (possibly without a promotable diff).  Exit 75
-means every configured account returned a structured capacity/auth failure.
-Every other nonzero exit is safe fallback input for the Codex ladder.
+For the Codex provider, exit 0 means a diff was promoted and exit 3 means both
+passes produced no diff.  For Claude, exit 0 means the provider completed
+(possibly without a promotable diff), while exit 75 means every configured
+account returned a structured capacity/auth failure.
 """
 from __future__ import annotations
 
@@ -36,8 +36,11 @@ from typing import NamedTuple
 EXHAUSTED = 75
 TIMEOUT = 124
 OUTPUT_LIMIT = 125
+NO_CHANGE = 3
 KEY = re.compile(r"^[0-9a-f]{12}$")
 MODEL = "sonnet"
+CODEX_MODEL = "gpt-5.6-sol"
+CODEX_MODEL_ID = re.compile(r"^gpt-[a-z0-9]+(?:[.-][a-z0-9]+)*$")
 TOOLS = ("Read", "Edit", "Write", "Glob", "Grep")
 DISALLOWED_TOOLS = (
     "Bash",
@@ -84,20 +87,29 @@ class Baseline(NamedTuple):
 
 
 def _retryable_cli_failure(output: bytes) -> bool:
-    """Trust only top-level API error fields from Claude stream-json events."""
+    """Trust only provider-owned API error fields from Claude stream-json events."""
     for line in output.decode("utf-8", "replace").splitlines():
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
         message = event.get("message") if isinstance(event, dict) else None
+        legacy_error = (
+            isinstance(event, dict)
+            and event.get("isApiErrorMessage") is True
+            and event.get("error") in RETRYABLE_ERRORS
+        )
+        current_error = (
+            isinstance(message, dict)
+            and message.get("is_api_error_message") is True
+            and message.get("error") in RETRYABLE_ERRORS
+        )
         if (
             isinstance(event, dict)
             and event.get("type") == "assistant"
-            and event.get("isApiErrorMessage") is True
-            and event.get("error") in RETRYABLE_ERRORS
             and isinstance(message, dict)
             and message.get("role") == "assistant"
+            and (legacy_error or current_error)
         ):
             return True
     return False
@@ -208,7 +220,7 @@ def _worktree(path: str) -> str:
 def _remaining(deadline: float) -> float:
     remaining = deadline - time.monotonic()
     if remaining <= 0:
-        raise subprocess.TimeoutExpired("Claude transaction", 0)
+        raise subprocess.TimeoutExpired("provider transaction", 0)
     return remaining
 
 
@@ -282,7 +294,14 @@ def _under(path: str, roots: tuple[str, ...]) -> bool:
     return any(path == root or path.startswith(f"{root}/") for root in roots)
 
 
-def _hash_node(root: Path, relative: str, digest: hashlib._Hash, budget: list[int]) -> None:
+def _hash_node(
+    root: Path,
+    relative: str,
+    digest: hashlib._Hash,
+    budget: list[int],
+    deadline: float,
+) -> None:
+    _remaining(deadline)
     path = root / relative
     info = os.lstat(path)
     mode = stat.S_IMODE(info.st_mode)
@@ -294,21 +313,22 @@ def _hash_node(root: Path, relative: str, digest: hashlib._Hash, budget: list[in
             raise PoolError("protected baseline is too large")
         with path.open("rb") as handle:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                _remaining(deadline)
                 digest.update(chunk)
     elif stat.S_ISDIR(info.st_mode):
         for child in sorted(path.iterdir(), key=lambda value: os.fsencode(value.name)):
-            _hash_node(root, f"{relative}/{child.name}", digest, budget)
+            _hash_node(root, f"{relative}/{child.name}", digest, budget, deadline)
     else:
         raise PoolError("protected baseline contains a special file")
 
 
-def _protected_digest(root: str, protected: tuple[str, ...]) -> str:
+def _protected_digest(root: str, protected: tuple[str, ...], deadline: float) -> str:
     digest = hashlib.sha256()
     budget = [0]
     for relative in protected:
         path = Path(root) / relative
         if path.exists() or path.is_symlink():
-            _hash_node(Path(root), relative, digest, budget)
+            _hash_node(Path(root), relative, digest, budget, deadline)
         else:
             digest.update(f"absent:{relative}\0".encode("utf-8", "surrogateescape"))
     return digest.hexdigest()
@@ -354,7 +374,7 @@ def _baseline(
         head=head,
         status=tracked,
         protected=protected,
-        protected_digest=_protected_digest(worktree, protected),
+        protected_digest=_protected_digest(worktree, protected, deadline),
     )
 
 
@@ -374,15 +394,30 @@ def _assert_baseline(
         raise PoolError("original worktree changed during Claude transaction")
 
 
-def _copy_regular_tree(source: Path, destination: Path) -> None:
+def _copy_regular_tree(
+    source: Path,
+    destination: Path,
+    deadline: float | None = None,
+) -> None:
+    if deadline is not None:
+        _remaining(deadline)
     info = os.lstat(source)
     if stat.S_ISREG(info.st_mode):
         destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        shutil.copy2(source, destination, follow_symlinks=False)
+        try:
+            with source.open("rb") as input_handle, destination.open("xb") as output:
+                for chunk in iter(lambda: input_handle.read(1024 * 1024), b""):
+                    if deadline is not None:
+                        _remaining(deadline)
+                    output.write(chunk)
+            shutil.copystat(source, destination, follow_symlinks=False)
+        except BaseException:
+            _remove_node(destination)
+            raise
     elif stat.S_ISDIR(info.st_mode):
         destination.mkdir(mode=stat.S_IMODE(info.st_mode) or 0o700, parents=True, exist_ok=True)
         for child in source.iterdir():
-            _copy_regular_tree(child, destination / child.name)
+            _copy_regular_tree(child, destination / child.name, deadline)
     else:
         raise PoolError("protected baseline contains a special file")
 
@@ -420,7 +455,7 @@ def _prepare_clone(
     for relative in baseline.protected:
         source = Path(original) / relative
         if source.exists():
-            _copy_regular_tree(source, sandbox / relative)
+            _copy_regular_tree(source, sandbox / relative, deadline)
 
 
 def _write_settings(path: Path) -> None:
@@ -489,6 +524,57 @@ def _child_env(parent: Mapping[str, str], token: str) -> dict[str, str]:
     for name in ("SSL_CERT_DIR", "SSL_CERT_FILE"):
         if name in child and not child[name].startswith(("/etc/", "/usr/")):
             child.pop(name)
+    return child
+
+
+def _codex_configuration(environ: Mapping[str, str]) -> tuple[str, tuple[str, ...], str]:
+    model = environ.get("CODEX_PRIMARY_MODEL") or CODEX_MODEL
+    supported = tuple((environ.get("SUPPORTED_CODEX_MODELS") or
+                       "gpt-5.6-sol,gpt-5.6-terra").split(","))
+    codex_home = environ.get("CODEX_HOME", "")
+    if (
+        model != CODEX_MODEL
+        or not supported
+        or any(not CODEX_MODEL_ID.fullmatch(value) for value in supported)
+        or len(set(supported)) != len(supported)
+        or model not in supported
+    ):
+        raise PoolError("Codex primary must be exact configured gpt-5.6-sol")
+    try:
+        home_info = os.lstat(codex_home)
+        auth_info = os.lstat(Path(codex_home) / "auth.json")
+    except OSError as exc:
+        raise PoolError("Codex auth home unavailable") from exc
+    if (
+        not stat.S_ISDIR(home_info.st_mode)
+        or stat.S_IMODE(home_info.st_mode) & 0o077
+        or not stat.S_ISREG(auth_info.st_mode)
+        or stat.S_IMODE(auth_info.st_mode) & 0o077
+        or auth_info.st_nlink != 1
+        or auth_info.st_size <= 0
+        or auth_info.st_size > MAX_POOL_BYTES
+    ):
+        raise PoolError("Codex auth home unavailable")
+    return model, supported, codex_home
+
+
+def _codex_child_env(
+    parent: Mapping[str, str],
+    codex_home: str,
+    private_home: str,
+) -> dict[str, str]:
+    child = {name: parent[name] for name in SAFE_PARENT_ENV if parent.get(name)}
+    child.update(
+        {
+            "PATH": parent.get("PATH") or "/usr/local/bin:/usr/bin:/bin",
+            "HOME": private_home,
+            "CODEX_HOME": codex_home,
+            "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_SYSTEM": "/dev/null",
+            "GIT_TERMINAL_PROMPT": "0",
+            "GIT_OPTIONAL_LOCKS": "0",
+        }
+    )
     return child
 
 
@@ -684,6 +770,7 @@ def _capture_process(
 
 
 def _candidate_paths(
+    original: str,
     sandbox: str,
     baseline: Baseline,
     git_env: Mapping[str, str],
@@ -761,6 +848,13 @@ def _candidate_paths(
             if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_PROMOTION_FILE_BYTES:
                 raise PoolError("Claude candidate contains a special or oversized file")
             total += info.st_size
+    for relative in changed:
+        path = Path(original) / relative
+        if path.exists() or path.is_symlink():
+            info = os.lstat(path)
+            if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_PROMOTION_FILE_BYTES:
+                raise PoolError("original candidate contains a special or oversized file")
+            total += info.st_size
     if total > MAX_PROMOTION_BYTES:
         raise PoolError("Claude candidate exceeds promotion bounds")
     return patch, changed, new
@@ -777,7 +871,8 @@ def _remove_node(path: Path) -> None:
         path.unlink()
 
 
-def _copy_new_file(source: Path, destination: Path) -> None:
+def _copy_new_file(source: Path, destination: Path, deadline: float) -> None:
+    _remaining(deadline)
     info = os.lstat(source)
     if not stat.S_ISREG(info.st_mode):
         raise PoolError("new candidate is not a regular file")
@@ -798,6 +893,7 @@ def _copy_new_file(source: Path, destination: Path) -> None:
     try:
         with os.fdopen(fd, "wb") as output, source.open("rb") as input_handle:
             for chunk in iter(lambda: input_handle.read(1024 * 1024), b""):
+                _remaining(deadline)
                 output.write(chunk)
             output.flush()
             os.fsync(output.fileno())
@@ -814,7 +910,7 @@ def _promote(
     deadline: float,
     root: Path,
 ) -> bool:
-    patch, changed, new = _candidate_paths(sandbox, baseline, git_env, deadline)
+    patch, changed, new = _candidate_paths(original, sandbox, baseline, git_env, deadline)
     _assert_baseline(original, baseline, git_env, deadline)
     if not patch and not new:
         return False
@@ -835,7 +931,7 @@ def _promote(
             if not stat.S_ISREG(info.st_mode):
                 raise PoolError("original candidate path is not a regular file")
             existing.add(relative)
-            _copy_regular_tree(source, backup / relative)
+            _copy_regular_tree(source, backup / relative, deadline)
     try:
         if patch:
             _git(original, git_env, deadline, "apply", "--binary", "--whitespace=nowarn", "-", input_bytes=patch)
@@ -845,11 +941,13 @@ def _promote(
             while not parent.exists():
                 created_directories.add(parent)
                 parent = parent.parent
-            _copy_new_file(Path(sandbox) / relative, destination)
+            _copy_new_file(Path(sandbox) / relative, destination, deadline)
     except BaseException:
         for relative in changed + new:
             _remove_node(Path(original) / relative)
         for relative in existing:
+            # Rollback is safety cleanup: once promotion started it must finish
+            # even if the execution budget expired.
             _copy_regular_tree(backup / relative, Path(original) / relative)
         for directory in sorted(created_directories, key=lambda value: len(value.parts), reverse=True):
             try:
@@ -921,6 +1019,145 @@ def _run_attempt(
         return TIMEOUT, b"", True
 
 
+def _codex_command(
+    environ: Mapping[str, str],
+    sandbox: Path,
+    model: str,
+) -> list[str]:
+    search_path = environ.get("PATH") or "/usr/local/bin:/usr/bin:/bin"
+    codex = shutil.which("codex", path=search_path)
+    if not codex:
+        raise PoolError("required Codex runtime unavailable")
+    return [
+        codex,
+        "exec",
+        "--ephemeral",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--sandbox",
+        "workspace-write",
+        "--color",
+        "never",
+        "-C",
+        str(sandbox),
+        "-c",
+        'model_reasoning_effort="ultra"',
+        "-m",
+        model,
+        "-",
+    ]
+
+
+def _run_codex_attempt(
+    prompt: bytes,
+    worktree: str,
+    prompt_file: str,
+    model: str,
+    codex_home: str,
+    deadline: float,
+    environ: Mapping[str, str],
+) -> int:
+    temp_parent = environ.get("RUNNER_TEMP") or None
+    if temp_parent is not None and not os.path.isdir(temp_parent):
+        raise PoolError("RUNNER_TEMP is not a directory")
+    try:
+        with tempfile.TemporaryDirectory(prefix=".codex-implementer.", dir=temp_parent) as raw_root:
+            root = Path(raw_root)
+            root.chmod(0o700)
+            git_env = _git_env(environ, root)
+            baseline = _baseline(worktree, prompt_file, git_env, deadline)
+            sandbox = root / "candidate"
+            _prepare_clone(worktree, sandbox, baseline, git_env, deadline)
+            private_home = root / "home"
+            private_home.mkdir(mode=0o700)
+            prompt_path = root / "prompt.txt"
+            fd = os.open(prompt_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(prompt)
+            child_env = _codex_child_env(environ, codex_home, str(private_home))
+            with prompt_path.open("rb") as prompt_handle:
+                process = subprocess.Popen(
+                    _codex_command(environ, sandbox, model),
+                    cwd=str(root),
+                    env=child_env,
+                    stdin=prompt_handle,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+                returncode, _output, timed_out, overflow = _capture_process(process, deadline)
+            if timed_out:
+                return TIMEOUT
+            if overflow:
+                return OUTPUT_LIMIT
+            if returncode != 0:
+                return returncode or 1
+            try:
+                promoted = _promote(
+                    worktree,
+                    str(sandbox),
+                    baseline,
+                    git_env,
+                    deadline,
+                    root,
+                )
+            except PoolError:
+                return 1
+            return 0 if promoted else NO_CHANGE
+    except subprocess.TimeoutExpired:
+        return TIMEOUT
+
+
+def run_codex(
+    worktree: str,
+    prompt_file: str,
+    *,
+    timeout_sec: int,
+    environ: Mapping[str, str] | None = None,
+) -> int:
+    env = dict(os.environ if environ is None else environ)
+    model, _supported, codex_home = _codex_configuration(env)
+    timeout = _bounded_int(timeout_sec, MIN_TIMEOUT_SEC, MAX_TIMEOUT_SEC, "timeout")
+    prompt, prompt_path = _regular_prompt(prompt_file)
+    directory = _worktree(worktree)
+    deadline = time.monotonic() + timeout
+    retry_suffix = (
+        b"\n\nIl primo passaggio non ha prodotto modifiche. Riesamina il repository "
+        b"e completa ora il risultato minimo verificabile. Non fare domande e non "
+        b"terminare senza una modifica pertinente."
+    )
+    retry_prompt = prompt + retry_suffix
+    if len(retry_prompt) > MAX_PROMPT_BYTES:
+        retry_prompt = prompt
+    for attempt, attempt_prompt in enumerate((prompt, retry_prompt), start=1):
+        returncode = _run_codex_attempt(
+            attempt_prompt,
+            directory,
+            prompt_path,
+            model,
+            codex_home,
+            deadline,
+            env,
+        )
+        if returncode == 0:
+            print("claude_pool: Codex Sol transaction completed", file=sys.stderr)
+            return 0
+        if returncode == NO_CHANGE:
+            if attempt == 1:
+                print("claude_pool: Codex Sol produced no diff; retrying", file=sys.stderr)
+                continue
+            print("claude_pool: Codex Sol produced no diff after two passes", file=sys.stderr)
+            return NO_CHANGE
+        if returncode == TIMEOUT:
+            print("claude_pool: Codex Sol transaction timed out safely", file=sys.stderr)
+        elif returncode == OUTPUT_LIMIT:
+            print("claude_pool: Codex Sol output exceeded bounded limit", file=sys.stderr)
+        else:
+            print("claude_pool: Codex Sol failed safely", file=sys.stderr)
+        return returncode or 1
+    return NO_CHANGE
+
+
 def run(
     worktree: str,
     prompt_file: str,
@@ -966,12 +1203,19 @@ def run(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--provider", choices=("codex", "claude"), required=True)
     parser.add_argument("--worktree", required=True)
     parser.add_argument("--prompt-file", required=True)
     parser.add_argument("--max-turns", type=int, default=30)
     parser.add_argument("--timeout-sec", type=int, default=900)
     args = parser.parse_args(argv)
     try:
+        if args.provider == "codex":
+            return run_codex(
+                args.worktree,
+                args.prompt_file,
+                timeout_sec=args.timeout_sec,
+            )
         return run(
             args.worktree,
             args.prompt_file,

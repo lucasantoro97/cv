@@ -284,9 +284,8 @@ jobs:
         run: |
           set -euo pipefail
           cd work
-          # Claude runs transactionally in a disposable OS-sandboxed clone. Only a
-          # successful bounded diff is promoted; every other outcome leaves this tree
-          # untouched and falls through to the existing two-pass Codex ladder.
+          # Codex Sol is always first. Every provider attempt runs in a disposable
+          # clone and only a successful bounded diff is promoted to this tree.
           before=$(mktemp "$RUNNER_TEMP/implementer-before.XXXXXX")
           after="$RUNNER_TEMP/implementer-after"
           git -c core.hooksPath=/dev/null status --porcelain=v1 -z > "$before"
@@ -294,6 +293,62 @@ jobs:
             git -c core.hooksPath=/dev/null status --porcelain=v1 -z > "$after"
             ! cmp -s "$before" "$after"
           }
+          codex_home=""
+          cleanup_codex_home() {
+            [ -n "$codex_home" ] || return 0
+            case "$codex_home" in
+              "$RUNNER_TEMP"/codex-primary-home.*)
+                shred -u "$codex_home/auth.json" 2>/dev/null || true
+                rm -rf -- "$codex_home"
+                ;;
+              *) echo "safe stop: unexpected Codex auth path" >&2 ;;
+            esac
+            codex_home=""
+          }
+          trap cleanup_codex_home EXIT
+          codex_rc=64
+          if [ -n "${CODEX_AUTH_B64:-}" ]; then
+            set +e
+            codex_home=$(mktemp -d "$RUNNER_TEMP/codex-primary-home.XXXXXX")
+            setup_rc=$?
+            if [ "$setup_rc" -eq 0 ]; then
+              chmod 700 "$codex_home"
+              printf '%s' "$CODEX_AUTH_B64" | base64 -d > "$codex_home/auth.json"
+              setup_rc=$?
+              if [ "$setup_rc" -eq 0 ] && [ -s "$codex_home/auth.json" ]; then
+                chmod 600 "$codex_home/auth.json"
+              else
+                setup_rc=1
+              fi
+            fi
+            set -e
+            if [ "$setup_rc" -eq 0 ]; then
+              set +e
+              env -i HOME="$HOME" PATH="$PATH" LANG="${LANG:-C.UTF-8}" \
+                LC_ALL="${LC_ALL:-}" TERM="${TERM:-dumb}" RUNNER_TEMP="$RUNNER_TEMP" \
+                CODEX_HOME="$codex_home" CODEX_PRIMARY_MODEL="${CODEX_PRIMARY_MODEL:-}" \
+                SUPPORTED_CODEX_MODELS="${SUPPORTED_CODEX_MODELS:-}" \
+                python3 "$RUNNER_TEMP/lib/claude_pool.py" --provider codex \
+                  --worktree . --prompt-file .issue-prompt.txt --timeout-sec 900
+              codex_rc=$?
+              set -e
+            else
+              echo "Codex primary auth is unavailable; using Claude fallback" >&2
+            fi
+            cleanup_codex_home
+            if [ "$codex_rc" -eq 0 ] && changed; then
+              printf 'gpt-5.6-sol\n' > "$RUNNER_TEMP/implementer-class"
+              exit 0
+            fi
+            if [ "$codex_rc" -eq 0 ]; then
+              echo "Codex primary reported success without a promoted diff; using Claude fallback" >&2
+            else
+              changed && { echo "safe stop: failed Codex transaction altered worktree" >&2; exit 1; }
+              echo "Codex primary failed or produced no work; using Claude fallback" >&2
+            fi
+          else
+            echo "Codex primary auth is unavailable; using Claude fallback" >&2
+          fi
           claude_rc=64
           if [ -n "${CLAUDE_CODE_OAUTH_POOL_B64:-}" ]; then
             set +e
@@ -301,64 +356,20 @@ jobs:
               TERM="${TERM:-dumb}" RUNNER_TEMP="$RUNNER_TEMP" \
               AGENT_MODEL="${AGENT_MODEL:-}" \
               CLAUDE_CODE_OAUTH_POOL_B64="$CLAUDE_CODE_OAUTH_POOL_B64" \
-              python3 "$RUNNER_TEMP/lib/claude_pool.py" --worktree . \
-                --prompt-file .issue-prompt.txt --max-turns 30 --timeout-sec 900
+              python3 "$RUNNER_TEMP/lib/claude_pool.py" --provider claude \
+                --worktree . --prompt-file .issue-prompt.txt \
+                --max-turns 30 --timeout-sec 900
             claude_rc=$?
             set -e
             if [ "$claude_rc" -eq 0 ] && changed; then
-              printf 'claude:%s\n' "$AGENT_MODEL" > "$RUNNER_TEMP/implementer-class"
+              printf 'claude:sonnet\n' > "$RUNNER_TEMP/implementer-class"
               exit 0
             fi
-            if [ "$claude_rc" -eq 0 ]; then
-              echo "Claude completed without a diff; continuing with Codex" >&2
-            else
-              echo "Claude unavailable or failed safely (exit=$claude_rc); continuing with Codex" >&2
-            fi
+            [ "$claude_rc" -ne 0 ] || echo "Claude fallback completed without a diff" >&2
           else
-            echo "Claude pool unavailable; continuing with Codex" >&2
+            echo "Claude fallback pool is unavailable" >&2
           fi
-          # The transactional helper guarantees failed Claude output cannot reach Codex.
-          git -c core.hooksPath=/dev/null status --porcelain=v1 -z > "$before"
-          primary_model="${CODEX_PRIMARY_MODEL:-gpt-5.6-sol}"
-          PRIMARY_MODEL="$primary_model" \
-            SUPPORTED_MODELS="${SUPPORTED_CODEX_MODELS:-gpt-5.6-sol,gpt-5.6-terra}" python3 - <<'PY'
-          import os, re
-          model = os.environ['PRIMARY_MODEL']
-          supported = os.environ['SUPPORTED_MODELS'].split(',')
-          exact = re.compile(r'gpt-[a-z0-9]+(?:[.-][a-z0-9]+)*').fullmatch
-          if (not exact(model) or not supported or any(not exact(value) for value in supported)
-                  or len(set(supported)) != len(supported) or model not in supported):
-              raise SystemExit('safe stop: implementer must be an exact configured gpt-* model id')
-          PY
-          [ -n "${CODEX_AUTH_B64:-}" ] || { echo "safe stop: Codex auth unavailable" >&2; exit 1; }
-          export CODEX_HOME="$RUNNER_TEMP/codex-home"
-          mkdir -p "$CODEX_HOME"; chmod 700 "$CODEX_HOME"
-          printf '%s' "$CODEX_AUTH_B64" | base64 -d > "$CODEX_HOME/auth.json"; chmod 600 "$CODEX_HOME/auth.json"
-          trap 'shred -u "$CODEX_HOME/auth.json" 2>/dev/null || true' EXIT
-          for attempt in 1 2; do
-            prompt=$(cat .issue-prompt.txt)
-            if [ "$attempt" -eq 2 ]; then
-              prompt="$prompt
-
-            Il primo passaggio non ha prodotto modifiche. Riesamina il repository e completa ora il risultato minimo verificabile. Non fare domande e non terminare senza una modifica pertinente."
-            fi
-            set +e
-            env -i HOME="$HOME" PATH="$PATH" LANG="${LANG:-C.UTF-8}" \
-              LC_ALL="${LC_ALL:-}" TERM="${TERM:-dumb}" CODEX_HOME="$CODEX_HOME" \
-              codex exec --sandbox workspace-write -C . \
-              -c 'model_reasoning_effort="ultra"' \
-              -m "$primary_model" \
-              "$prompt" 2>&1 | tail -40
-            codex_rc=${PIPESTATUS[0]}
-            set -e
-            [ "$codex_rc" -eq 0 ] || { echo "Codex pass $attempt failed (exit=$codex_rc)" >&2; exit "$codex_rc"; }
-            if changed; then
-              printf '%s\n' "$primary_model" > "$RUNNER_TEMP/implementer-class"
-              exit 0
-            fi
-            echo "Codex pass $attempt produced no change (exit=$codex_rc)" >&2
-          done
-          echo "safe stop: two Codex Ultra passes produced no implementation" >&2
+          echo "safe stop: no implementation after Codex primary and Claude fallback" >&2
           exit 1
       - name: disposable PIANO planner
         id: plan
@@ -454,6 +465,63 @@ jobs:
             ! cmp -s "$before" "$RUNNER_TEMP/implementer-after"
           }
           git -c core.hooksPath=/dev/null -C work status --porcelain=v1 -z > "$before"
+          codex_home=""
+          cleanup_codex_home() {
+            [ -n "$codex_home" ] || return 0
+            case "$codex_home" in
+              "$RUNNER_TEMP"/codex-primary-home.*)
+                shred -u "$codex_home/auth.json" 2>/dev/null || true
+                rm -rf -- "$codex_home"
+                ;;
+              *) echo "safe stop: unexpected Codex auth path" >&2 ;;
+            esac
+            codex_home=""
+          }
+          trap cleanup_codex_home EXIT
+          codex_rc=64
+          if [ -n "${CODEX_AUTH_B64:-}" ]; then
+            set +e
+            codex_home=$(mktemp -d "$RUNNER_TEMP/codex-primary-home.XXXXXX")
+            setup_rc=$?
+            if [ "$setup_rc" -eq 0 ]; then
+              chmod 700 "$codex_home"
+              printf '%s' "$CODEX_AUTH_B64" | base64 -d > "$codex_home/auth.json"
+              setup_rc=$?
+              if [ "$setup_rc" -eq 0 ] && [ -s "$codex_home/auth.json" ]; then
+                chmod 600 "$codex_home/auth.json"
+              else
+                setup_rc=1
+              fi
+            fi
+            set -e
+            if [ "$setup_rc" -eq 0 ]; then
+              set +e
+              env -i HOME="$HOME" PATH="$PATH" LANG="${LANG:-C.UTF-8}" \
+                LC_ALL="${LC_ALL:-}" TERM="${TERM:-dumb}" RUNNER_TEMP="$RUNNER_TEMP" \
+                CODEX_HOME="$codex_home" CODEX_PRIMARY_MODEL="${CODEX_PRIMARY_MODEL:-}" \
+                SUPPORTED_CODEX_MODELS="${SUPPORTED_CODEX_MODELS:-}" \
+                python3 "$RUNNER_TEMP/lib/claude_pool.py" --provider codex \
+                  --worktree work --prompt-file "$RUNNER_TEMP/implementation-prompt.txt" \
+                  --timeout-sec 900
+              codex_rc=$?
+              set -e
+            else
+              echo "Codex primary auth is unavailable; using Claude fallback" >&2
+            fi
+            cleanup_codex_home
+            if [ "$codex_rc" -eq 0 ] && changed; then
+              printf 'gpt-5.6-sol\n' > "$RUNNER_TEMP/implementer-class"
+              exit 0
+            fi
+            if [ "$codex_rc" -eq 0 ]; then
+              echo "Codex primary reported success without a promoted diff; using Claude fallback" >&2
+            else
+              changed && { echo "safe stop: failed Codex transaction altered worktree" >&2; exit 1; }
+              echo "Codex primary failed or produced no work; using Claude fallback" >&2
+            fi
+          else
+            echo "Codex primary auth is unavailable; using Claude fallback" >&2
+          fi
           claude_rc=64
           if [ -n "${CLAUDE_CODE_OAUTH_POOL_B64:-}" ]; then
             set +e
@@ -461,61 +529,20 @@ jobs:
               TERM="${TERM:-dumb}" RUNNER_TEMP="$RUNNER_TEMP" \
               AGENT_MODEL="${AGENT_MODEL:-}" \
               CLAUDE_CODE_OAUTH_POOL_B64="$CLAUDE_CODE_OAUTH_POOL_B64" \
-              python3 "$RUNNER_TEMP/lib/claude_pool.py" --worktree work \
-                --prompt-file "$RUNNER_TEMP/implementation-prompt.txt" \
+              python3 "$RUNNER_TEMP/lib/claude_pool.py" --provider claude \
+                --worktree work --prompt-file "$RUNNER_TEMP/implementation-prompt.txt" \
                 --max-turns 30 --timeout-sec 900
             claude_rc=$?
             set -e
             if [ "$claude_rc" -eq 0 ] && changed; then
-              printf 'claude:%s\n' "$AGENT_MODEL" > "$RUNNER_TEMP/implementer-class"
+              printf 'claude:sonnet\n' > "$RUNNER_TEMP/implementer-class"
               exit 0
             fi
-            if [ "$claude_rc" -eq 0 ]; then
-              echo "Claude completed without a diff; continuing with Codex" >&2
-            else
-              echo "Claude unavailable or failed safely (exit=$claude_rc); continuing with Codex" >&2
-            fi
+            [ "$claude_rc" -ne 0 ] || echo "Claude fallback completed without a diff" >&2
           else
-            echo "Claude pool unavailable; continuing with Codex" >&2
+            echo "Claude fallback pool is unavailable" >&2
           fi
-          git -c core.hooksPath=/dev/null -C work status --porcelain=v1 -z > "$before"
-          primary_model="${CODEX_PRIMARY_MODEL:-gpt-5.6-sol}"
-          PRIMARY_MODEL="$primary_model" \
-            SUPPORTED_MODELS="${SUPPORTED_CODEX_MODELS:-gpt-5.6-sol,gpt-5.6-terra}" python3 - <<'PY'
-          import os, re
-          model = os.environ['PRIMARY_MODEL']
-          supported = os.environ['SUPPORTED_MODELS'].split(',')
-          exact = re.compile(r'gpt-[a-z0-9]+(?:[.-][a-z0-9]+)*').fullmatch
-          if (not exact(model) or any(not exact(value) for value in supported)
-                  or len(set(supported)) != len(supported) or model not in supported):
-              raise SystemExit('safe stop: implementer must be an exact configured gpt-* model id')
-          PY
-          [ -n "${CODEX_AUTH_B64:-}" ] || { echo "safe stop: Codex implementer auth unavailable" >&2; exit 1; }
-          export CODEX_HOME="$RUNNER_TEMP/codex-home"
-          mkdir -p "$CODEX_HOME"; chmod 700 "$CODEX_HOME"
-          printf '%s' "$CODEX_AUTH_B64" | base64 -d > "$CODEX_HOME/auth.json"; chmod 600 "$CODEX_HOME/auth.json"
-          trap 'shred -u "$CODEX_HOME/auth.json" 2>/dev/null || true' EXIT
-          run_codex() {
-            env -i HOME="$HOME" PATH="$PATH" LANG="${LANG:-C.UTF-8}" \
-              LC_ALL="${LC_ALL:-}" TERM="${TERM:-dumb}" CODEX_HOME="$CODEX_HOME" \
-              codex exec --sandbox workspace-write -C work -m "$primary_model" \
-              -c 'model_reasoning_effort="ultra"' \
-              "$(cat "$RUNNER_TEMP/implementation-prompt.txt")" 2>&1 | tail -40
-            return "${PIPESTATUS[0]}"
-          }
-          for attempt in 1 2; do
-            set +e
-            run_codex
-            codex_rc=$?
-            set -e
-            [ "$codex_rc" -eq 0 ] || { echo "Codex implementation pass $attempt failed (exit=$codex_rc)" >&2; exit "$codex_rc"; }
-            if changed; then
-              printf '%s\n' "$primary_model" > "$RUNNER_TEMP/implementer-class"
-              exit 0
-            fi
-            echo "Codex implementation pass $attempt produced no change" >&2
-          done
-          echo "safe stop: no implementation after two Codex Ultra passes" >&2
+          echo "safe stop: no implementation after Codex primary and Claude fallback" >&2
           exit 1
       - name: unprivileged question protocol inspection
         id: question_inspect
@@ -598,6 +625,8 @@ jobs:
           if (not implementer or any(not exact(value) for value in supported)
                   or len(set(supported)) != len(supported)):
               raise SystemExit('safe stop: supported model configuration is invalid')
+          if reviewer != 'gpt-5.6-terra':
+              raise SystemExit('safe stop: reviewer must be exact gpt-5.6-terra')
           if not external_implementer(implementer) and (
                   not exact(implementer) or implementer not in supported):
               raise SystemExit('safe stop: implementer identity is not an exact supported Codex or Claude identity')

@@ -32,6 +32,8 @@ from fence import fence
 PROTECTED = (
     re.compile(r"(^|/)workflows/"),
     re.compile(r"(^|/)\.forgejo/"),
+    re.compile(r"(^|/)agent-image/"),
+    re.compile(r"(^|/)(?:config(?:\.[^/]+)?|compose)\.ya?ml$"),
     re.compile(r"(^|/)(imap_bridge|notifier|common)\.py$"),
     re.compile(r"(^|/)safety/"),
     re.compile(r"(^|/)corpus\.py$"),
@@ -108,9 +110,12 @@ def protected_hits(paths: list[str]) -> list[str]:
 
 
 def read_verdict(text: str) -> str | None:
-    """Return only the last exact verdict line; substrings never approve."""
-    found = VERDICT.findall(text or "")
-    return found[-1] if found else None
+    """Accept only an exact final nonempty stdout line."""
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    if not lines:
+        return None
+    match = VERDICT.fullmatch(lines[-1])
+    return match.group(1) if match else None
 
 
 def validate_model(model: str, supported: tuple[str, ...], role: str) -> None:
@@ -237,10 +242,15 @@ def run_reviewer(repo: str, model: str, prompt: str, effort: str) -> subprocess.
     command = [
         "codex",
         "exec",
+        "--ephemeral",
+        "--ignore-user-config",
+        "--ignore-rules",
         "--sandbox",
         "read-only",
         "-C",
         repo,
+        "-c",
+        "project_doc_max_bytes=0",
         "-c",
         f'model_reasoning_effort="{effort}"',
         "-m",
@@ -370,7 +380,9 @@ def main() -> int:
                 write_comment(args.comment_output, comments)
                 print("REVIEW: reviewer execution failed; no merge")
                 return 3
-            verdict = read_verdict(raw_review)
+            # Stderr is diagnostic-only: it can echo fenced untrusted data and
+            # must never override the reviewer's explicit stdout verdict.
+            verdict = read_verdict(process.stdout or "")
             print(
                 "REVIEW_RESULT "
                 + json.dumps({"model": model, "files": len(paths), "verdict": verdict}, sort_keys=True)
