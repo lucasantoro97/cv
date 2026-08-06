@@ -78,6 +78,16 @@ MAX_OFFICE_DOCUMENT_BYTES = 256 * 1024
 MAX_LOCAL_CONTEXT_BYTES = 24 * 1024
 MAX_LOCAL_CONTEXT_FILE_BYTES = 12 * 1024
 MAX_LOCAL_CONTEXT_FILES = 8
+# Quanti PERCORSI puo' avere il repository perche' valga la pena guardarlo. E' un
+# limite di memoria sull'elenco, non di capacita': la selezione qui sotto e' gia'
+# limitata per conto suo (albero troncato, MAX_LOCAL_CONTEXT_FILES file, 24KB), e
+# produce lo stesso contesto che il repository ne abbia 400 o 40.000.
+# Prima qui si riusava MAX_PROMOTION_FILES (4096), che e' una cosa diversa: quanti
+# file un agente puo' RISCRIVERE in una sola promozione. Conflaggerli faceva
+# rifiutare in tre secondi qualunque repository un po' grosso -- HeatScan ne ha
+# 4890 -- cioe' spegneva il terzo motore proprio sui ticket veri, con un messaggio
+# che non diceva perche'. (2026-08-06)
+MAX_LOCAL_INVENTORY_PATHS = 100_000
 MAX_LOCAL_TREE_BYTES = 6 * 1024
 TOOLS = ("Read", "Edit", "Write", "Glob", "Grep")
 DISALLOWED_TOOLS = (
@@ -1327,7 +1337,7 @@ def _local_repository_context(
         for value in tracked_raw.split(b"\0")
         if value
     )
-    if len(paths) > MAX_PROMOTION_FILES:
+    if len(paths) > MAX_LOCAL_INVENTORY_PATHS:
         raise PoolError("local repository inventory exceeds bound")
 
     prompt_text = prompt.decode("utf-8", "strict")
@@ -1419,7 +1429,17 @@ def _local_gemma_patch_call(
         "correct unified git patch for the requested repository task using only the supplied "
         "snapshot. Do not claim tests or actions you did not perform. If the snapshot is "
         "insufficient or the request cannot be safely implemented, submit an empty patch. "
-        "Call submit_patch exactly once and emit no prose.\n\n"
+        "Call submit_patch exactly once and emit no prose.\n"
+        # Il validatore a valle pretende ESATTAMENTE questa forma, ma il contratto
+        # non la nominava: il modello rispondeva con un diff unificato senza
+        # intestazione git ("--- README" invece di "diff --git a/README b/README") e
+        # veniva rifiutato come "local patch format invalid" dopo aver speso la
+        # chiamata. Chiedere la forma che si pretende costa una riga (2026-08-06).
+        "PATCH FORMAT, MANDATORY: begin every file with a line exactly like\n"
+        "diff --git a/<path> b/<path>\n"
+        "then ---/+++ headers with the same a/ and b/ prefixes, then @@ hunks whose\n"
+        "body lines each start with a space, + or -. End the patch with a newline.\n"
+        "A patch that does not start with 'diff --git ' is discarded unread.\n\n"
         "UNTRUSTED TICKET SPECIFICATION:\n"
         + prompt.decode("utf-8", "strict")
         + "\n\nTRUSTED READ-ONLY REPOSITORY SNAPSHOT:\n"
