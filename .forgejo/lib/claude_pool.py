@@ -48,7 +48,17 @@ CODEX_MODEL = "gpt-5.6-sol"
 CODEX_MODEL_ID = re.compile(r"^gpt-[a-z0-9]+(?:[.-][a-z0-9]+)*$")
 LOCAL_GEMMA_PROVIDER_CLI = "local-gemma"
 LOCAL_GEMMA_PROVIDER_ID = "local_gemma"
-LOCAL_GEMMA_ENDPOINT = "http://10.201.9.1:8011/v1"
+# Il POOL HAProxy sul gateway del bridge runner-egress, non un singolo
+# llama-server. :8011 era il container "temporaneo" del grafo, ritirato il
+# 2026-08-06: cablarlo qui rendeva questa corsia un ostaggio di quel
+# container, e infatti la sua rimozione ha spento il terzo motore fino a
+# questa riga. Il pool sopravvive a una GPU che entra o esce, e serve lo
+# stesso modello. ATTENZIONE alla finestra: /v1/models dichiara n_ctx 65536, ma
+# llama-server gira con --parallel 4, quindi ogni SLOT ne vede 16384 -- identico
+# al container ritirato. Il numero grande e' la somma, non cio' che tocca a una
+# richiesta: alzare MAX_LOCAL_CONTEXT_BYTES fidandosi di 65536 farebbe traboccare
+# il contesto e produrre pattume proprio sui ticket piu' grossi.
+LOCAL_GEMMA_ENDPOINT = "http://10.201.9.1:8009/v1"
 LOCAL_GEMMA_MODEL = "gemma-4-26b-a4b"
 LOCAL_GEMMA_IDENTITY = f"{LOCAL_GEMMA_PROVIDER_ID}:{LOCAL_GEMMA_MODEL}"
 LOCAL_GEMMA_RESPONSES_URL = f"{LOCAL_GEMMA_ENDPOINT}/responses"
