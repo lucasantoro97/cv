@@ -384,7 +384,10 @@ def main() -> None:
     counts = {"manifest": 0, "original": 0}
     for kind, asset in selected:
         cap = MAX_MANIFEST_BYTES if kind == "manifest" else MAX_ORIGINAL_BYTES
-        url = asset.get("download_url")
+        # Forgejo 15 lists issue assets with `browser_download_url` only; older
+        # payloads (and the fixtures) use `download_url`.  Missing both is not a
+        # fallback case: no URL means no download, exactly like an untrusted one.
+        url = asset.get("download_url") or asset.get("browser_download_url")
         if not _trusted_attachment_url(root, url):
             raise SystemExit(f"{kind} asset {_stable_id(asset)} download URL untrusted")
         if kind == "original" and ref is not None and counts["manifest"] != 1:

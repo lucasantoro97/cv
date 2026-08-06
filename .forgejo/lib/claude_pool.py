@@ -1878,6 +1878,25 @@ def run_local_gemma_office(
     return outcome.returncode or 1
 
 
+# Il broker risponde con un verdetto che riguarda TUTTO il pool, non il singolo account:
+# "All 3 accounts exhausted. Retry in 3600s." Ruotare sugli account rimanenti dopo averlo
+# letto significa rifare una domanda a cui e' gia' stata data risposta, e ogni giro costa
+# l'avvio della CLI piu' un viaggio all'API.
+#
+# Misurato il 2026-08-05 sul runner: la corsia Claude ha impiegato 2 minuti e 48 secondi
+# per fallire, con 26 ticket in coda su un runner a capacita' 1 — piu' di un'ora di attesa
+# spesa per interrogare un pool gia' dichiarato esaurito, prima di arrivare al modello
+# locale che poi il lavoro lo faceva davvero.
+POOL_WIDE_EXHAUSTION = re.compile(
+    r"all\s+\d+\s+accounts?\s+exhausted|all\s+configured\s+accounts?\s+exhausted",
+    re.IGNORECASE)
+
+
+def _pool_wide_exhaustion(output: bytes) -> bool:
+    """Il pool intero e' esaurito: ruotare non puo' cambiare la risposta."""
+    return bool(POOL_WIDE_EXHAUSTION.search(output.decode("utf-8", "replace")))
+
+
 def run(
     worktree: str,
     prompt_file: str,
@@ -1916,6 +1935,12 @@ def run(
         if not _retryable_cli_failure(output):
             print("claude_pool: non-retryable Claude failure", file=sys.stderr)
             return returncode or 1
+        if _pool_wide_exhaustion(output):
+            # Verdetto sull'intero pool: si smette subito e si lascia il turno al motore
+            # successivo, invece di spendere gli altri account per riconfermarlo.
+            print("claude_pool: pool-wide exhaustion reported; skipping remaining accounts",
+                  file=sys.stderr)
+            return EXHAUSTED
         print("claude_pool: Claude capacity/auth unavailable; rotating", file=sys.stderr)
     print("claude_pool: all configured accounts exhausted", file=sys.stderr)
     return EXHAUSTED
